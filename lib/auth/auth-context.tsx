@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { login as apiLogin, logout as apiLogout, me as apiMe } from "@/lib/api/auth";
+import { getAccessToken, setAccessToken } from "@/lib/api/client";
 import type { Session } from "@/lib/api/types";
 
 interface AuthContextValue {
@@ -18,13 +19,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!getAccessToken()) {
+      setLoading(false);
+      return;
+    }
     apiMe()
       .then(setSession)
-      .catch(() => setSession(null))
+      .catch(() => {
+        setAccessToken(null);
+        setSession(null);
+      })
       .finally(() => setLoading(false));
   }, []);
 
   const signIn = async (email: string, password: string) => {
+    setAccessToken(null);
     const s = await apiLogin(email, password);
     setSession(s);
   };
@@ -39,7 +48,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
+  if (!ctx) return { session: null, loading: false, signIn: async () => {}, signOut: async () => {} } as any;
   return ctx;
 }
 
