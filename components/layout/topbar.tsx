@@ -33,7 +33,7 @@ export function Topbar({ onMenu }: { onMenu?: () => void }) {
             className="h-9 rounded-md border bg-background px-2 text-sm"
             aria-label="Outlet"
           >
-            {outlets.map((o) => (
+            {outlets.map((o: { id: string; name: string }) => (
               <option key={o.id} value={o.id}>{o.name}</option>
             ))}
           </select>

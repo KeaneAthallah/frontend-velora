@@ -19,17 +19,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!getAccessToken()) {
-      setLoading(false);
-      return;
+    const token = getAccessToken();
+    if (!token) {
+      const id = setTimeout(() => setLoading(false), 0);
+      return () => clearTimeout(id);
     }
+    let cancelled = false;
     apiMe()
-      .then(setSession)
-      .catch(() => {
-        setAccessToken(null);
-        setSession(null);
-      })
-      .finally(() => setLoading(false));
+      .then((s) => { if (!cancelled) setSession(s); })
+      .catch(() => { if (!cancelled) { setAccessToken(null); setSession(null); } })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, []);
 
   const signIn = async (email: string, password: string) => {

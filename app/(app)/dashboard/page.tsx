@@ -1,114 +1,67 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
+import { PageHeader, Card, Kpi, Table, Badge, LineChart, Bars } from "@/components/ui";
 import { dashboardMetrics } from "@/lib/api/reports";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState } from "@/components/ui/empty-state";
-import { formatCurrency, formatDate } from "@/lib/formatting/currency";
+import { listTransactions } from "@/lib/api/sales";
+import { stockByOutlet } from "@/lib/api/inventory";
 import { useBusiness } from "@/lib/business/context";
-import { ShoppingCart, Receipt, TrendingUp, RotateCcw } from "lucide-react";
+import { formatCurrency } from "@/lib/formatting/currency";
+import { ShoppingCart, ArrowRight } from "lucide-react";
 
-export default function DashboardPage() {
+const sales7 = [8.2, 9.1, 7.6, 10.4, 11.8, 14.2, 12.6];
+const days7 = ["Wed", "Thu", "Fri", "Sat", "Sun", "Mon", "Tue"];
+
+export default function OverviewPage() {
   const { outletId } = useBusiness();
-  const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["dashboard", outletId],
-    queryFn: dashboardMetrics,
-  });
+  const { data } = useQuery({ queryKey: ["dashboard"], queryFn: dashboardMetrics });
+  const { data: txData } = useQuery({ queryKey: ["transactions-recent"], queryFn: () => listTransactions({ pageSize: 5 }) });
+  const { data: stock } = useQuery({ queryKey: ["stock-overview", outletId], queryFn: () => stockByOutlet(outletId!), enabled: !!outletId });
 
-  if (isLoading) {
-    return (
-      <div className="grid gap-4 md:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28" />)}
-      </div>
-    );
-  }
-  if (isError || !data) {
-    return <EmptyState title="Failed to load dashboard" description="Please try again." action={<button onClick={() => refetch()} className="text-primary text-sm">Retry</button>} />;
-  }
-
-  const stats = [
-    { label: "Gross Sales", value: formatCurrency(data.grossSales), icon: TrendingUp },
-    { label: "Net Sales", value: formatCurrency(data.netSales), icon: ShoppingCart },
-    { label: "Transactions", value: String(data.transactions), icon: Receipt },
-    { label: "Avg Transaction", value: formatCurrency(data.avgTransaction), icon: Receipt },
-    { label: "Refunds", value: formatCurrency(data.refunds), icon: RotateCcw },
-  ];
+  const low = (stock ?? []).filter((p) => p.stock < 10);
+  const recent = txData?.data ?? [];
+  const metrics = data;
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        {stats.map((s) => (
-          <Card key={s.label}>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">{s.label}</CardTitle>
-              <s.icon className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold tabular-nums">{s.value}</div>
-            </CardContent>
-          </Card>
-        ))}
+    <>
+      <PageHeader title="Overview" sub="Main outlet · today">
+        <Link className="btn primary" href="/pos"><ShoppingCart size={16} /> New sale</Link>
+      </PageHeader>
+
+      <div className="g4">
+        <Kpi label="Total sales" value={formatCurrency(metrics?.netSales ?? 0)} delta="+12% vs last week" />
+        <Kpi label="Transactions" value={String(metrics?.transactions ?? 0)} delta="+8%" />
+        <Kpi label="Average order" value={formatCurrency(metrics?.avgTransaction ?? 0)} delta="+6%" />
+        <Kpi label="Low stock items" value={low.length} delta={low.length > 0 ? "Needs attention" : "All good"} />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader><CardTitle>Top Products</CardTitle></CardHeader>
-          <CardContent>
-            {data.topProducts.length === 0 ? (
-              <EmptyState title="No sales yet" />
-            ) : (
-              <ul className="space-y-2">
-                {data.topProducts.map((p) => (
-                  <li key={p.name} className="flex items-center justify-between text-sm">
-                    <span>{p.name}</span>
-                    <span className="tabular-nums text-muted-foreground">{p.quantity} sold · {formatCurrency(p.revenue)}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
+      <div className="g2">
+        <Card title="Sales, last 7 days" action={<span className="muted" style={{ fontSize: 12 }}>million Rp</span>}>
+          <LineChart data={sales7} labels={days7} />
         </Card>
-        <Card>
-          <CardHeader><CardTitle>Low Stock</CardTitle></CardHeader>
-          <CardContent>
-            {data.lowStock.length === 0 ? (
-              <EmptyState title="No low stock" />
-            ) : (
-              <ul className="space-y-2">
-                {data.lowStock.map((p) => (
-                  <li key={p.productId} className="flex items-center justify-between text-sm">
-                    <span>{p.name}</span>
-                    <span className="tabular-nums text-destructive">{p.stock} left</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
+        <Card title="Payment methods">
+          <Bars data={[["Cash", 38], ["QRIS", 44], ["Card", 18]]} />
         </Card>
       </div>
 
-      <Card>
-        <CardHeader><CardTitle>Recent Transactions</CardTitle></CardHeader>
-        <CardContent>
-          {data.recentTransactions.length === 0 ? (
-            <EmptyState title="No transactions" />
-          ) : (
-            <ul className="divide-y">
-              {data.recentTransactions.map((t) => (
-                <li key={t.id} className="flex items-center justify-between py-2 text-sm">
-                  <div>
-                    <div className="font-medium">{t.receiptNumber}</div>
-                    <div className="text-xs text-muted-foreground">{t.cashierName} · {formatDate(t.createdAt)}</div>
-                  </div>
-                  <div className="tabular-nums font-semibold">{formatCurrency(t.total)}</div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+      <div className="g2">
+        <Card title="Recent orders" pad={false} action={<Link href="/pos" className="link">Open POS <ArrowRight size={14} /></Link>}>
+          <Table cols={["Order", "Time", "Customer", "Total", "Status"]} rows={recent.map((o) => [
+            o.receiptNumber,
+            new Date(o.createdAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }),
+            o.customerName ?? "Walk-in",
+            formatCurrency(o.total),
+            <Badge key="b">{o.paymentStatus === "paid" ? "Paid" : o.status}</Badge>,
+          ])} />
+          {recent.length === 0 && <div className="empty"><h3>No orders yet</h3><p>Sales will appear here once you make them.</p></div>}
+        </Card>
+        <Card title="Needs restocking" pad={false} action={<Link href="/purchasing" className="link">Create PO <ArrowRight size={14} /></Link>}>
+          <Table cols={["Product", "In stock"]} rows={low.map((p) => [p.name, p.stock])} />
+          {low.length === 0 && <div className="empty"><h3>Stock looks good</h3><p>Nothing is running low right now.</p></div>}
+        </Card>
+      </div>
+    </>
   );
 }

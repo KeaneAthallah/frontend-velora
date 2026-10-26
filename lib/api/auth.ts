@@ -42,7 +42,8 @@ export async function login(email: string, password: string): Promise<Session> {
     const { setAccessToken } = await import("./client");
     setAccessToken(res.token);
   }
-  return mapSessionFromMe(res.user);
+  // Fetch full profile with memberships
+  return me();
 }
 
 export async function register(name: string, email: string, password: string, passwordConfirmation: string): Promise<Session> {

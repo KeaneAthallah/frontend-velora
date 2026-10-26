@@ -1,42 +1,50 @@
 "use client";
-
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Sidebar } from "./sidebar";
-import { Topbar } from "./topbar";
+import { Bell, Search, Sun, Moon, Monitor } from "lucide-react";
+import Sidebar from "@/components/Sidebar";
 import { useAuth } from "@/lib/auth/auth-context";
+import { useTheme } from "@/components/providers/theme-provider";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth();
   const router = useRouter();
-  const [collapsed, setCollapsed] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const { theme, setTheme } = useTheme();
 
   useEffect(() => {
     if (!loading && !session) router.replace("/login");
   }, [loading, session, router]);
 
-  if (loading) {
-    return <div className="flex h-screen items-center justify-center"><div className="h-6 w-6 animate-spin rounded-full border-2 border-muted border-t-primary" /></div>;
-  }
+  if (loading) return <div className="page"><p className="muted">Loading…</p></div>;
   if (!session) return null;
 
+  const cycleTheme = () => {
+    const next = theme === "light" ? "dark" : theme === "dark" ? "system" : "light";
+    setTheme(next);
+  };
+  const ThemeIcon = theme === "dark" ? Moon : theme === "light" ? Sun : Monitor;
+
   return (
-    <div className="flex h-screen overflow-hidden">
-      <div className="hidden md:block">
-        <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((v) => !v)} />
-      </div>
-      {mobileOpen && (
-        <div className="fixed inset-0 z-40 md:hidden">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setMobileOpen(false)} />
-          <div className="absolute left-0 top-0 h-full">
-            <Sidebar collapsed={false} onToggle={() => setMobileOpen(false)} />
+    <div className="shell">
+      <Sidebar />
+      <div className="main">
+        <header className="top">
+          <label className="search">
+            <Search size={15} />
+            <input placeholder="Search products, orders, customers" aria-label="Search" />
+          </label>
+          <button className="icon-btn" aria-label="Notifications" type="button">
+            <Bell size={17} />
+          </button>
+          <button className="icon-btn" aria-label="Toggle theme" type="button" onClick={cycleTheme} title={`Theme: ${theme}`}>
+            <ThemeIcon size={17} />
+          </button>
+          <div className="me">
+            <span>{session.user.name.charAt(0).toUpperCase()}</span>
+            <div><b>{session.user.name}</b><small>{session.business?.name ?? "Owner"}</small></div>
           </div>
-        </div>
-      )}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <Topbar onMenu={() => setMobileOpen(true)} />
-        <main className="flex-1 overflow-y-auto bg-background p-4 md:p-6">{children}</main>
+        </header>
+        <main className="page fade-in">{children}</main>
       </div>
     </div>
   );

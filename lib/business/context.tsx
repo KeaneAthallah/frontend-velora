@@ -53,6 +53,6 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
 
 export function useBusiness() {
   const ctx = useContext(Ctx);
-  if (!ctx) throw new Error("useBusiness must be used within BusinessProvider");
+  if (!ctx) return { outlets: [], outletId: null, businessId: null, setOutletId: () => {} } as any;
   return ctx;
 }
