@@ -1,90 +1,191 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  LayoutDashboard, ShoppingCart, Receipt, CreditCard, Banknote, Clock, Package, Tags, Layers, Percent,
-  Warehouse, ArrowLeftRight, ClipboardList, Truck, AlertTriangle, Users, Shield, Building2, Monitor,
-  BarChart3, TrendingUp, PieChart, UserCog,
+  BarChart3,
+  Boxes,
+  ClipboardList,
+  LayoutDashboard,
+  Package,
+  Receipt,
+  Settings,
+  ShoppingCart,
+  Truck,
+  Users,
+  UserRound,
 } from "lucide-react";
 
-export type NavItem = { label: string; href: string; icon: LucideIcon; permission?: string };
-export type NavGroup = { label: string; items: NavItem[] };
+export type NavItem = {
+  label: string;
+  href: string;
+  icon: LucideIcon;
+  permission?: string;
+  permissions?: string[];
+  description?: string;
+};
+
+export type NavGroup = {
+  label: string;
+  items: NavItem[];
+};
 
 export const navGroups: NavGroup[] = [
-  { label: "Overview", items: [{ label: "Dashboard", href: "/dashboard", icon: LayoutDashboard }] },
   {
-    label: "Sales",
+    label: "Operate",
     items: [
-      { label: "POS / New Sale", href: "/pos", icon: ShoppingCart },
-      { label: "Transactions", href: "/transactions", icon: Receipt },
-      { label: "Returns & Refunds", href: "/returns", icon: ArrowLeftRight },
-      { label: "Payments", href: "/payments", icon: CreditCard },
-      { label: "Cash Registers", href: "/cash-registers", icon: Banknote },
-      { label: "Shifts", href: "/shifts", icon: Clock },
+      {
+        label: "Overview",
+        href: "/",
+        icon: LayoutDashboard,
+        permission: "reports.view",
+        description: "Sales, stock, and store health",
+      },
+      {
+        label: "New sale",
+        href: "/sales",
+        icon: ShoppingCart,
+        permission: "sales.create",
+        description: "Open the point of sale",
+      },
+      {
+        label: "Transactions",
+        href: "/transactions",
+        icon: Receipt,
+        permission: "sales.view",
+        description: "Receipts, payments, and voids",
+      },
     ],
   },
   {
-    label: "Catalog",
+    label: "Catalog & stock",
     items: [
-      { label: "Products", href: "/products", icon: Package },
-      { label: "Categories", href: "/categories", icon: Tags },
-      { label: "Product Variants", href: "/variants", icon: Layers },
-      { label: "Pricing & Discounts", href: "/pricing", icon: Percent },
+      {
+        label: "Products",
+        href: "/products",
+        icon: Package,
+        permission: "products.view",
+        description: "Items, prices, and categories",
+      },
+      {
+        label: "Inventory",
+        href: "/inventory",
+        icon: Boxes,
+        permission: "inventory.view",
+        description: "Stock levels and movements",
+      },
+      {
+        label: "Purchasing",
+        href: "/purchasing",
+        icon: ClipboardList,
+        permission: "purchasing.view",
+        description: "Purchase orders and receiving",
+      },
+      {
+        label: "Suppliers",
+        href: "/suppliers",
+        icon: Truck,
+        permission: "suppliers.view",
+        description: "Supply contacts and terms",
+      },
     ],
   },
   {
-    label: "Inventory",
+    label: "Relationships",
     items: [
-      { label: "Stock Overview", href: "/inventory", icon: Warehouse },
-      { label: "Inventory Movements", href: "/inventory/movements", icon: ArrowLeftRight },
-      { label: "Stock Adjustments", href: "/inventory/adjustments", icon: ClipboardList },
-      { label: "Stock Transfers", href: "/inventory/transfers", icon: Truck },
-      { label: "Stocktakes", href: "/inventory/stocktakes", icon: ClipboardList },
-      { label: "Low Stock", href: "/inventory/low-stock", icon: AlertTriangle },
+      {
+        label: "Customers",
+        href: "/customers",
+        icon: Users,
+        permission: "customers.view",
+        description: "Directory and loyalty",
+      },
     ],
   },
   {
-    label: "Purchasing",
+    label: "Analyze",
     items: [
-      { label: "Suppliers", href: "/suppliers", icon: Truck },
-      { label: "Purchase Orders", href: "/purchase-orders", icon: ClipboardList },
-      { label: "Goods Receiving", href: "/receiving", icon: Warehouse },
+      {
+        label: "Reports",
+        href: "/reports",
+        icon: BarChart3,
+        permission: "reports.view",
+        description: "Sales performance and detail",
+      },
     ],
   },
   {
-    label: "Customers",
+    label: "Manage",
     items: [
-      { label: "Customer Directory", href: "/customers", icon: Users },
-      { label: "Purchase History", href: "/customers/history", icon: Receipt },
-    ],
-  },
-  {
-    label: "Business Management",
-    items: [
-      { label: "Employees", href: "/employees", icon: UserCog },
-      { label: "Roles & Permissions", href: "/roles", icon: Shield },
-      { label: "Outlets", href: "/outlets", icon: Building2 },
-      { label: "POS Devices", href: "/devices", icon: Monitor },
-    ],
-  },
-  {
-    label: "Analytics",
-    items: [
-      { label: "Sales Reports", href: "/reports/sales", icon: BarChart3 },
-      { label: "Product Performance", href: "/reports/products", icon: TrendingUp },
-      { label: "Inventory Reports", href: "/reports/inventory", icon: PieChart },
-      { label: "Payment Reports", href: "/reports/payments", icon: CreditCard },
-      { label: "Cashier Reports", href: "/reports/cashiers", icon: UserCog },
-    ],
-  },
-  {
-    label: "Settings",
-    items: [
-      { label: "Business Profile", href: "/settings/business", icon: Building2 },
-      { label: "Taxes", href: "/settings/taxes", icon: Percent },
-      { label: "Payment Methods", href: "/settings/payment-methods", icon: CreditCard },
-      { label: "Receipt Settings", href: "/settings/receipts", icon: Receipt },
-      { label: "Notifications", href: "/settings/notifications", icon: AlertTriangle },
-      { label: "Security", href: "/settings/security", icon: Shield },
-      { label: "Account", href: "/settings/account", icon: UserCog },
+      {
+        label: "Team",
+        href: "/employees",
+        icon: UserRound,
+        permission: "employees.view",
+        description: "Members, roles, and access",
+      },
+      {
+        label: "Settings",
+        href: "/settings",
+        icon: Settings,
+        permissions: ["businesses.view", "outlets.view", "settings.manage"],
+        description: "Business, outlets, and tax",
+      },
     ],
   },
 ];
+
+export const bottomNavItems: NavItem[] = [
+  { label: "Overview", href: "/", icon: LayoutDashboard, permission: "reports.view" },
+  { label: "Sell", href: "/sales", icon: ShoppingCart, permission: "sales.create" },
+  { label: "Products", href: "/products", icon: Package, permission: "products.view" },
+  { label: "Stock", href: "/inventory", icon: Boxes, permission: "inventory.view" },
+];
+
+export function filterNavGroups(has: (permission: string) => boolean): NavGroup[] {
+  return navGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => {
+        if (item.permissions?.length) return item.permissions.some(has);
+        return !item.permission || has(item.permission);
+      }),
+    }))
+    .filter((group) => group.items.length > 0);
+}
+
+export function findNavItem(pathname: string): NavItem | null {
+  const all = navGroups.flatMap((group) => group.items);
+  if (pathname === "/") return all.find((item) => item.href === "/") ?? null;
+  return all.find((item) => item.href !== "/" && pathname.startsWith(item.href)) ?? null;
+}
+
+export function navTrail(pathname: string): { label: string; href?: string }[] {
+  if (pathname === "/") return [{ label: "Overview" }];
+  const segments = pathname.split("/").filter(Boolean);
+  const trail: { label: string; href?: string }[] = [];
+  segments.forEach((segment, index) => {
+    const href = `/${segments.slice(0, index + 1).join("/")}`;
+    const item = findNavItem(href);
+    trail.push({
+      label:
+        item?.label ??
+        segment
+          .split("-")
+          .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(" "),
+      href: index === segments.length - 1 ? undefined : href,
+    });
+  });
+  return trail;
+}
+
+/** First page a member can actually open, used after sign-in. */
+export function defaultRoute(has: (permission: string) => boolean) {
+  if (has("reports.view")) return "/";
+  if (has("sales.create")) return "/sales";
+  if (has("sales.view")) return "/transactions";
+  if (has("products.view")) return "/products";
+  if (has("inventory.view")) return "/inventory";
+  if (has("purchasing.view")) return "/purchasing";
+  if (has("customers.view")) return "/customers";
+  if (has("employees.view")) return "/employees";
+  return "/settings";
+}

@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
-export default function PosRedirect() {
+
+export default function LegacyPosPage() {
   redirect("/sales");
 }

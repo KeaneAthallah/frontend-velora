@@ -6,6 +6,7 @@ import { ThemeProvider } from "./theme-provider";
 import { AuthProvider } from "@/lib/auth/auth-context";
 import { BusinessProvider } from "@/lib/business/context";
 import { ToastProvider } from "@/components/ui/toast";
+import { MockDataToggle } from "@/components/dev/mock-data-toggle";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [client] = useState(
@@ -21,7 +22,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <ThemeProvider>
         <AuthProvider>
           <BusinessProvider>
-            <ToastProvider>{children}</ToastProvider>
+            <ToastProvider>
+              {children}
+              <MockDataToggle />
+            </ToastProvider>
           </BusinessProvider>
         </AuthProvider>
       </ThemeProvider>

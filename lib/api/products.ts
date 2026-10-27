@@ -1,116 +1,192 @@
 import { apiRequest, USE_MOCK_API } from "./client";
-import { mockCategories, mockProducts } from "./mock-data";
+import { mockDb, mockId } from "./mock-db";
 import type { Category, Paginated, Product } from "./types";
 
-let products = [...mockProducts];
+export type ProductInput = {
+  name: string;
+  sku: string;
+  categoryId?: string;
+  price: number;
+  cost: number;
+  unit?: string;
+  trackInventory?: boolean;
+  active?: boolean;
+};
 
-function normalizeProduct(p: any): Product {
+function normalizeProduct(product: any): Product {
   return {
-    id: String(p.id),
-    name: p.name,
-    sku: p.sku,
-    categoryId: p.category_id ? String(p.category_id) : "",
-    categoryName: p.category?.name ?? "",
-    price: Number(p.selling_price ?? p.price ?? 0),
-    cost: Number(p.cost_price ?? p.cost ?? 0),
-    taxRate: 0.1,
+    id: String(product.id),
+    name: product.name,
+    sku: product.sku,
+    categoryId: product.category_id ? String(product.category_id) : "",
+    categoryName: product.category?.name ?? "",
+    price: Number(product.selling_price ?? product.price ?? 0),
+    cost: Number(product.cost_price ?? product.cost ?? 0),
+    taxRate: Number(product.tax_rate ?? 0),
     stockByOutlet: {},
-    active: p.is_active ?? true,
-    barcode: p.barcodes?.[0]?.code,
-    variants: (p.variants ?? []).map((v: any) => ({ id: String(v.id), name: v.name, price: Number(v.selling_price ?? 0), sku: v.sku })),
+    active: product.is_active ?? true,
+    trackInventory: product.track_inventory ?? true,
+    unit: product.unit ?? "pcs",
+    barcode: product.barcodes?.[0]?.code,
+    variants: (product.variants ?? []).map((variant: any) => ({
+      id: String(variant.id),
+      name: variant.name,
+      price: Number(variant.selling_price ?? 0),
+      sku: variant.sku,
+    })),
   };
 }
 
-export async function listProducts(params?: { search?: string; categoryId?: string; page?: number; pageSize?: number }): Promise<Paginated<Product>> {
+export async function listProducts(params?: {
+  search?: string;
+  categoryId?: string;
+  page?: number;
+  pageSize?: number;
+  activeOnly?: boolean;
+  active?: boolean;
+}): Promise<Paginated<Product>> {
   if (USE_MOCK_API) {
-    let data = [...products];
+    let data = mockDb.products.map((product) => ({ ...product, stockByOutlet: { ...product.stockByOutlet } }));
+    if (params?.activeOnly) data = data.filter((product) => product.active);
+    if (params?.active !== undefined) data = data.filter((product) => product.active === params.active);
     if (params?.search) {
-      const q = params.search.toLowerCase();
-      data = data.filter((p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q));
+      const query = params.search.toLowerCase();
+      data = data.filter(
+        (product) =>
+          product.name.toLowerCase().includes(query) ||
+          product.sku.toLowerCase().includes(query) ||
+          (product.barcode ?? "").includes(query)
+      );
     }
-    if (params?.categoryId) data = data.filter((p) => p.categoryId === params.categoryId);
+    if (params?.categoryId) data = data.filter((product) => product.categoryId === params.categoryId);
     const page = params?.page ?? 1;
     const pageSize = params?.pageSize ?? 20;
     const start = (page - 1) * pageSize;
-    return { data: data.slice(start, start + pageSize), page, pageSize, total: data.length, totalPages: Math.ceil(data.length / pageSize) };
+    return {
+      data: data.slice(start, start + pageSize),
+      page,
+      pageSize,
+      total: data.length,
+      totalPages: Math.max(1, Math.ceil(data.length / pageSize)),
+    };
   }
-  const qs = new URLSearchParams();
-  if (params?.search) qs.set("search", params.search);
-  if (params?.categoryId) qs.set("category_id", params.categoryId);
-  qs.set("per_page", String(params?.pageSize ?? 50));
-  const data = await apiRequest<any>(`/products?${qs.toString()}`);
+
+  const query = new URLSearchParams();
+  if (params?.search) query.set("search", params.search);
+  if (params?.categoryId) query.set("category_id", params.categoryId);
+  if (params?.activeOnly) query.set("is_active", "true");
+  else if (params?.active !== undefined) query.set("is_active", String(params.active));
+  query.set("page", String(params?.page ?? 1));
+  query.set("per_page", String(params?.pageSize ?? 50));
+  const data = await apiRequest<any>(`/products?${query.toString()}`);
   const items = Array.isArray(data) ? data : (data?.data ?? []);
-  const meta = (data && !Array.isArray(data)) ? data : {};
   return {
     data: items.map(normalizeProduct),
-    page: Number(meta.current_page ?? params?.page ?? 1),
-    pageSize: Number(meta.per_page ?? params?.pageSize ?? 50),
-    total: Number(meta.total ?? items.length),
-    totalPages: Number(meta.last_page ?? 1),
+    page: Number(data?.current_page ?? params?.page ?? 1),
+    pageSize: Number(data?.per_page ?? params?.pageSize ?? 50),
+    total: Number(data?.total ?? items.length),
+    totalPages: Number(data?.last_page ?? 1),
   };
 }
 
 export async function getProduct(id: string): Promise<Product> {
   if (USE_MOCK_API) {
-    const p = products.find((x) => x.id === id);
-    if (!p) throw new Error("Not found");
-    return p;
+    const product = mockDb.products.find((item) => item.id === id);
+    if (!product) throw new Error("Product not found");
+    return { ...product, stockByOutlet: { ...product.stockByOutlet } };
   }
   const data = await apiRequest<any>(`/products/${id}`);
   return normalizeProduct(data);
 }
 
-export async function createProduct(input: Partial<Product>): Promise<Product> {
+export async function createProduct(input: ProductInput): Promise<Product> {
   if (USE_MOCK_API) {
-    const p: Product = {
-      id: `p${Date.now()}`,
-      name: input.name ?? "New Product",
-      sku: input.sku ?? `SKU-${Date.now()}`,
+    const category = mockDb.categories.find((item) => item.id === input.categoryId);
+    const product: Product = {
+      id: mockId("p"),
+      name: input.name,
+      sku: input.sku,
       categoryId: input.categoryId ?? "",
-      categoryName: input.categoryName ?? "",
-      price: input.price ?? 0,
-      cost: input.cost ?? 0,
-      taxRate: 0.1,
-      stockByOutlet: {},
+      categoryName: category?.name ?? "",
+      price: input.price,
+      cost: input.cost,
+      taxRate: 0,
+      stockByOutlet: Object.fromEntries(mockDb.outlets.map((outlet) => [outlet.id, 0])),
       active: input.active ?? true,
-      barcode: input.barcode,
+      trackInventory: input.trackInventory ?? true,
+      unit: input.unit ?? "pcs",
     };
-    products = [p, ...products];
-    return p;
+    mockDb.products = [product, ...mockDb.products];
+    return product;
   }
-  const body: any = {
+  const body = {
     name: input.name,
     sku: input.sku,
     category_id: input.categoryId ? Number(input.categoryId) : null,
     cost_price: input.cost,
     selling_price: input.price,
+    unit: input.unit ?? "pcs",
+    track_inventory: input.trackInventory ?? true,
     is_active: input.active ?? true,
   };
   const data = await apiRequest<any>("/products", { method: "POST", body });
   return normalizeProduct(data);
 }
 
-export async function updateProduct(id: string, input: Partial<Product>): Promise<Product> {
+export async function updateProduct(id: string, input: Partial<ProductInput>): Promise<Product> {
   if (USE_MOCK_API) {
-    const idx = products.findIndex((x) => x.id === id);
-    if (idx < 0) throw new Error("Not found");
-    products[idx] = { ...products[idx], ...input };
-    return products[idx];
+    const index = mockDb.products.findIndex((item) => item.id === id);
+    if (index < 0) throw new Error("Product not found");
+    const category = input.categoryId ? mockDb.categories.find((item) => item.id === input.categoryId) : undefined;
+    mockDb.products[index] = {
+      ...mockDb.products[index],
+      ...input,
+      categoryName: category?.name ?? mockDb.products[index].categoryName,
+    };
+    return { ...mockDb.products[index], stockByOutlet: { ...mockDb.products[index].stockByOutlet } };
   }
-  const body: any = {};
+  const body: Record<string, unknown> = {};
   if (input.name !== undefined) body.name = input.name;
   if (input.sku !== undefined) body.sku = input.sku;
   if (input.categoryId !== undefined) body.category_id = input.categoryId ? Number(input.categoryId) : null;
   if (input.cost !== undefined) body.cost_price = input.cost;
   if (input.price !== undefined) body.selling_price = input.price;
+  if (input.unit !== undefined) body.unit = input.unit;
+  if (input.trackInventory !== undefined) body.track_inventory = input.trackInventory;
   if (input.active !== undefined) body.is_active = input.active;
   const data = await apiRequest<any>(`/products/${id}`, { method: "PUT", body });
   return normalizeProduct(data);
 }
 
+export async function setProductActive(id: string, active: boolean): Promise<Product> {
+  return updateProduct(id, { active });
+}
+
 export async function listCategories(): Promise<Category[]> {
-  if (USE_MOCK_API) return [...mockCategories];
+  if (USE_MOCK_API) {
+    return mockDb.categories.map((category) => ({
+      ...category,
+      productCount: mockDb.products.filter((product) => product.categoryId === category.id).length,
+    }));
+  }
   const data = await apiRequest<any>("/categories");
   const items = Array.isArray(data) ? data : (data?.data ?? []);
-  return items.map((c: any) => ({ id: String(c.id), name: c.name, productCount: 0 }));
+  return items.map((category: any) => ({
+    id: String(category.id),
+    name: category.name,
+    productCount: Number(category.products_count ?? 0),
+  }));
+}
+
+export async function createCategory(name: string): Promise<Category> {
+  if (USE_MOCK_API) {
+    const category: Category = { id: mockId("c"), name, productCount: 0 };
+    mockDb.categories = [...mockDb.categories, category];
+    return category;
+  }
+  const data = await apiRequest<any>("/categories", {
+    method: "POST",
+    body: { name, is_active: true },
+  });
+  return { id: String(data.id), name: data.name, productCount: 0 };
 }

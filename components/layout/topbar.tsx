@@ -1,71 +1,136 @@
 "use client";
 
-import React, { useState } from "react";
-import { usePathname } from "next/navigation";
-import { Bell, LogOut, Moon, Sun, ChevronDown, Menu } from "lucide-react";
+import * as React from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import {
+  ChevronRight,
+  LogOut,
+  Menu,
+  Monitor,
+  Moon,
+  Search,
+  Settings,
+  Sun,
+} from "lucide-react";
+import { Avatar, DropdownMenu, IconButton, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/primitives";
 import { useTheme } from "@/components/providers/theme-provider";
 import { useAuth } from "@/lib/auth/auth-context";
 import { useBusiness } from "@/lib/business/context";
-import { Button } from "@/components/ui/button";
+import { navTrail } from "@/lib/navigation";
+import { OutletSwitcher } from "./outlet-switcher";
 
-export function Topbar({ onMenu }: { onMenu?: () => void }) {
+export function Topbar({ onMenu, onSearch }: { onMenu: () => void; onSearch: (viaKeyboard?: boolean) => void }) {
   const pathname = usePathname();
-  const { theme, setTheme, resolved } = useTheme();
+  const router = useRouter();
+  const { theme, resolved, setTheme } = useTheme();
   const { session, signOut } = useAuth();
-  const { outlets, outletId, setOutletId } = useBusiness();
-  const [userOpen, setUserOpen] = useState(false);
+  const { outlet } = useBusiness();
+  const trail = React.useMemo(() => navTrail(pathname), [pathname]);
 
-  const title = pathname.split("/").filter(Boolean).map((s) => s.charAt(0).toUpperCase() + s.slice(1)).join(" / ") || "Dashboard";
+  const ThemeIcon = resolved === "dark" ? Moon : Sun;
 
   return (
-    <header className="flex h-14 items-center gap-3 border-b bg-card px-4">
-      <Button variant="ghost" size="icon" className="md:hidden" onClick={onMenu} aria-label="Menu">
-        <Menu className="h-4 w-4" />
-      </Button>
-      <div className="flex-1">
-        <h1 className="text-sm font-semibold">{title}</h1>
-      </div>
-      <div className="flex items-center gap-2">
-        {outlets.length > 0 && (
-          <select
-            value={outletId ?? ""}
-            onChange={(e) => setOutletId(e.target.value)}
-            className="h-9 rounded-md border bg-background px-2 text-sm"
-            aria-label="Outlet"
-          >
-            {outlets.map((o: { id: string; name: string }) => (
-              <option key={o.id} value={o.id}>{o.name}</option>
-            ))}
-          </select>
-        )}
-        <Button variant="ghost" size="icon" onClick={() => setTheme(theme === "dark" ? "light" : theme === "light" ? "system" : "dark")} aria-label="Toggle theme">
-          {resolved === "dark" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-        </Button>
-        <Button variant="ghost" size="icon" aria-label="Notifications">
-          <Bell className="h-4 w-4" />
-        </Button>
-        <div className="relative">
-          <button
-            onClick={() => setUserOpen((v) => !v)}
-            className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent"
-          >
-            <div className="h-7 w-7 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-semibold">
-              {session?.user.name.charAt(0) ?? "U"}
-            </div>
-            <span className="hidden text-sm md:inline">{session?.user.name ?? "Guest"}</span>
-            <ChevronDown className="h-3 w-3" />
-          </button>
-          {userOpen && (
-            <div className="absolute right-0 mt-2 w-48 rounded-md border bg-card p-1 shadow-lg">
-              <button
-                onClick={() => { setUserOpen(false); signOut(); }}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent"
-              >
-                <LogOut className="h-4 w-4" /> Sign out
-              </button>
-            </div>
-          )}
+    <header className="topbar">
+      <IconButton label="Open navigation" className="topbar__menu" onClick={onMenu}>
+        <Menu aria-hidden="true" />
+      </IconButton>
+
+      <nav className="crumbs" aria-label="Breadcrumb">
+        <Link href="/" className="crumbs__root">
+          {session?.business.name ?? "Velora"}
+        </Link>
+        {trail.map((crumb, index) => (
+          <React.Fragment key={`${crumb.label}-${index}`}>
+            {(index > 0 || session?.business.name) && <ChevronRight aria-hidden="true" className="crumbs__sep" />}
+            {crumb.href ? (
+              <Link href={crumb.href}>{crumb.label}</Link>
+            ) : (
+              <span aria-current="page" className="crumbs__current">
+                {crumb.label}
+              </span>
+            )}
+          </React.Fragment>
+        ))}
+        {outlet ? (
+          <span className="badge badge--neutral hide-mobile" style={{ marginLeft: 6 }}>
+            {outlet.name}
+          </span>
+        ) : null}
+      </nav>
+
+      <button
+        type="button"
+        className="topbar__search"
+        aria-label="Search workspace"
+        onClick={() => onSearch(false)}
+      >
+        <Search aria-hidden="true" />
+        <span>Search</span>
+        <kbd>Ctrl K</kbd>
+      </button>
+
+      <div className="topbar__actions">
+        <div className="hide-mobile">
+          <OutletSwitcher compact />
         </div>
+
+        <DropdownMenu
+          trigger={
+            <IconButton label={`Theme: ${theme}`} aria-haspopup="menu">
+              <ThemeIcon aria-hidden="true" />
+            </IconButton>
+          }
+          width={180}
+          label="Theme"
+        >
+          <MenuLabel>Appearance</MenuLabel>
+          <MenuItem icon={<Sun aria-hidden="true" />} selected={theme === "light"} onSelect={() => setTheme("light")}>
+            Light
+          </MenuItem>
+          <MenuItem icon={<Moon aria-hidden="true" />} selected={theme === "dark"} onSelect={() => setTheme("dark")}>
+            Dark
+          </MenuItem>
+          <MenuItem
+            icon={<Monitor aria-hidden="true" />}
+            selected={theme === "system"}
+            onSelect={() => setTheme("system")}
+          >
+            Match system
+          </MenuItem>
+        </DropdownMenu>
+
+        <div className="topbar__divider" aria-hidden="true" />
+
+        <DropdownMenu
+          trigger={
+            <button type="button" className="topbar__user" aria-label="Account menu">
+              <Avatar name={session?.user.name ?? "User"} size={26} />
+              <span className="topbar__user-meta">
+                <span>{session?.user.name ?? "Account"}</span>
+                <small>{session?.user.email}</small>
+              </span>
+            </button>
+          }
+          width={230}
+          label="Account"
+        >
+          <MenuLabel>{session?.business.name ?? "Workspace"}</MenuLabel>
+          <MenuItem icon={<Settings aria-hidden="true" />} onSelect={() => router.push("/settings")}>
+            Settings
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem
+            icon={<LogOut aria-hidden="true" />}
+            danger
+            onSelect={async () => {
+              await signOut();
+              router.replace("/login");
+            }}
+          >
+            Sign out
+          </MenuItem>
+        </DropdownMenu>
       </div>
     </header>
   );

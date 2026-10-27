@@ -1,51 +1,179 @@
 "use client";
-import React, { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { Bell, Search, Sun, Moon, Monitor } from "lucide-react";
-import Sidebar from "@/components/Sidebar";
-import { useAuth } from "@/lib/auth/auth-context";
-import { useTheme } from "@/components/providers/theme-provider";
+
+import * as React from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
+import { useAuth, usePermissions } from "@/lib/auth/auth-context";
+import { defaultRoute } from "@/lib/navigation";
+import { Sidebar } from "./sidebar";
+import { Topbar } from "./topbar";
+import { BottomNav } from "./bottom-nav";
+import { CommandPalette } from "./command-palette";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth();
+  const { has } = usePermissions();
   const router = useRouter();
-  const { theme, setTheme } = useTheme();
+  const pathname = usePathname();
+  const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
+  const [searchOpen, setSearchOpen] = React.useState(false);
+  const [searchInstant, setSearchInstant] = React.useState(false);
+  const [collapsed, setCollapsed] = React.useState(false);
+  const mobileNavOpenRef = React.useRef(false);
 
-  useEffect(() => {
-    if (!loading && !session) router.replace("/login");
-  }, [loading, session, router]);
+  React.useEffect(() => {
+    mobileNavOpenRef.current = mobileNavOpen;
+  }, [mobileNavOpen]);
 
-  if (loading) return <div className="page"><p className="muted">Loading…</p></div>;
+  React.useEffect(() => {
+    if (!loading && !session) {
+      const next = encodeURIComponent(pathname || "/");
+      router.replace(`/login?next=${next}`);
+    }
+  }, [loading, session, router, pathname]);
+
+  React.useEffect(() => {
+    if (loading || !session) return;
+    if (pathname === "/" && !has("reports.view")) {
+      const next = defaultRoute(has);
+      if (next !== "/") router.replace(next);
+    }
+  }, [loading, session, pathname, has, router]);
+
+  React.useEffect(() => {
+    if (!mobileNavOpenRef.current) return;
+    setMobileNavOpen(false);
+    const timer = window.setTimeout(() => document.getElementById("main")?.focus(), 120);
+    return () => window.clearTimeout(timer);
+  }, [pathname]);
+
+  React.useEffect(() => {
+    try {
+      setCollapsed(localStorage.getItem("velora_sidebar_collapsed") === "true");
+    } catch {}
+  }, []);
+
+  React.useEffect(() => {
+    if (!mobileNavOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const sidebar = document.querySelector<HTMLElement>(".sidebar");
+    const focusTimer = window.setTimeout(() => {
+      sidebar?.querySelector<HTMLButtonElement>(".mobile-nav-close")?.focus();
+    }, 30);
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMobileNavOpen(false);
+        document.querySelector<HTMLButtonElement>(".topbar__menu")?.focus();
+        return;
+      }
+      if (event.key !== "Tab" || !sidebar) return;
+      const nodes = Array.from(
+        sidebar.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((element) => element.offsetParent !== null);
+      if (!nodes.length) return;
+      const first = nodes[0];
+      const last = nodes[nodes.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [mobileNavOpen]);
+
+  React.useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing =
+        target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable;
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setSearchInstant(true);
+        setSearchOpen((value) => !value);
+        return;
+      }
+      if (event.key === "/" && !typing) {
+        event.preventDefault();
+        setSearchInstant(true);
+        setSearchOpen(true);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const toggleCollapsed = () => {
+    setCollapsed((value) => {
+      const next = !value;
+      try {
+        localStorage.setItem("velora_sidebar_collapsed", String(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  if (loading) {
+    return (
+      <div className="boot" role="status" aria-label="Loading workspace">
+        <Loader2 className="animate-spin" aria-hidden="true" />
+        <span>Opening your workspace…</span>
+      </div>
+    );
+  }
+
   if (!session) return null;
 
-  const cycleTheme = () => {
-    const next = theme === "light" ? "dark" : theme === "dark" ? "system" : "light";
-    setTheme(next);
+  const closeSearch = () => {
+    setSearchOpen(false);
+    setSearchInstant(false);
   };
-  const ThemeIcon = theme === "dark" ? Moon : theme === "light" ? Sun : Monitor;
 
   return (
-    <div className="shell">
-      <Sidebar />
-      <div className="main">
-        <header className="top">
-          <label className="search">
-            <Search size={15} />
-            <input placeholder="Search products, orders, customers" aria-label="Search" />
-          </label>
-          <button className="icon-btn" aria-label="Notifications" type="button">
-            <Bell size={17} />
-          </button>
-          <button className="icon-btn" aria-label="Toggle theme" type="button" onClick={cycleTheme} title={`Theme: ${theme}`}>
-            <ThemeIcon size={17} />
-          </button>
-          <div className="me">
-            <span>{session.user.name.charAt(0).toUpperCase()}</span>
-            <div><b>{session.user.name}</b><small>{session.business?.name ?? "Owner"}</small></div>
-          </div>
-        </header>
-        <main className="page fade-in">{children}</main>
+    <>
+      <a href="#main" className="skip-link">
+        Skip to content
+      </a>
+      <div
+        className="app"
+        data-mobile-nav={mobileNavOpen ? "open" : undefined}
+        data-collapsed={collapsed ? "true" : undefined}
+        onClick={(event) => {
+          if (mobileNavOpen && event.target === event.currentTarget) setMobileNavOpen(false);
+        }}
+      >
+        <Sidebar
+          onNavigate={() => setMobileNavOpen(false)}
+          collapsed={collapsed}
+          onToggleCollapsed={toggleCollapsed}
+        />
+        <div className="main">
+          <Topbar
+            onMenu={() => setMobileNavOpen(true)}
+            onSearch={(viaKeyboard = false) => {
+              setSearchInstant(viaKeyboard);
+              setSearchOpen(true);
+            }}
+          />
+          <main id="main" className={pathname === "/sales" ? "page page--wide" : "page"} tabIndex={-1}>
+            {children}
+          </main>
+        </div>
       </div>
-    </div>
+      <BottomNav onMore={() => setMobileNavOpen(true)} />
+      <CommandPalette open={searchOpen} onClose={closeSearch} instant={searchInstant} />
+    </>
   );
 }

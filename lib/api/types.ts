@@ -10,6 +10,7 @@ export type Business = {
   name: string;
   currency: string;
   timezone: string;
+  address?: string;
 };
 
 export type Outlet = {
@@ -17,6 +18,8 @@ export type Outlet = {
   businessId: string;
   name: string;
   address?: string;
+  code?: string;
+  phone?: string;
 };
 
 export type Product = {
@@ -31,6 +34,8 @@ export type Product = {
   taxRate: number;
   stockByOutlet: Record<string, number>;
   active: boolean;
+  trackInventory?: boolean;
+  unit?: string;
   imageUrl?: string;
   variants?: { id: string; name: string; price: number; sku: string }[];
 };
@@ -58,6 +63,15 @@ export type CheckoutRequest = {
   idempotencyKey: string;
 };
 
+export type Payment = {
+  id: string;
+  method: string;
+  amount: number;
+  status: string;
+  reference?: string;
+  createdAt: string;
+};
+
 export type Transaction = {
   id: string;
   receiptNumber: string;
@@ -67,14 +81,23 @@ export type Transaction = {
   cashierName: string;
   customerId?: string;
   customerName?: string;
-  items: { name: string; sku: string; quantity: number; unitPrice: number; discount: number; lineTotal: number }[];
+  items: {
+    productId?: string;
+    name: string;
+    sku: string;
+    quantity: number;
+    unitPrice: number;
+    discount: number;
+    lineTotal: number;
+  }[];
   subtotal: number;
   discount: number;
   tax: number;
   total: number;
   paymentStatus: "pending" | "paid" | "failed" | "refunded" | "partially_refunded";
   status: "completed" | "voided" | "refunded";
-  payments: { id: string; method: string; amount: number; status: string; reference?: string; createdAt: string }[];
+  payments: Payment[];
+  notes?: string;
   createdAt: string;
 };
 
@@ -85,11 +108,24 @@ export type InventoryMovement = {
   productId: string;
   productName: string;
   outletId: string;
-  type: "adjustment" | "transfer" | "receive" | "sale" | "return";
+  type: "adjustment" | "transfer" | "receive" | "sale" | "return" | "void" | "damaged" | "missing" | "expired" | "write_off";
   quantity: number;
   reason: string;
+  balanceAfter?: number;
   createdAt: string;
   createdBy: string;
+};
+
+export type Customer = {
+  id: string;
+  name: string;
+  phone: string;
+  email?: string;
+  address?: string;
+  loyaltyNumber?: string;
+  loyaltyPoints: number;
+  notes?: string;
+  createdAt: string;
 };
 
 export type Supplier = {
@@ -98,6 +134,16 @@ export type Supplier = {
   contact: string;
   email: string;
   phone: string;
+  address?: string;
+};
+
+export type PurchaseOrderItem = {
+  id?: string;
+  productId: string;
+  productName: string;
+  quantity: number;
+  receivedQuantity?: number;
+  cost: number;
 };
 
 export type PurchaseOrder = {
@@ -106,33 +152,92 @@ export type PurchaseOrder = {
   supplierId: string;
   supplierName: string;
   outletId: string;
+  outletName?: string;
   status: "draft" | "approved" | "received" | "partial" | "cancelled";
-  items: { productId: string; productName: string; quantity: number; cost: number }[];
+  items: PurchaseOrderItem[];
   total: number;
+  expectedAt?: string;
   createdAt: string;
+  approvedAt?: string;
+  receivedAt?: string;
 };
 
 export type Employee = {
   id: string;
+  userId?: string;
   name: string;
   email: string;
   role: string;
+  roleId?: string;
+  roleSlug?: string;
   outlets: string[];
   active: boolean;
+  status?: string;
+  joinedAt?: string;
 };
 
-export type Role = { id: string; name: string; permissions: string[] };
+export type Role = { id: string; slug?: string; name: string; permissions: string[]; description?: string };
 
-export type DashboardMetrics = {
+export type TaxRate = {
+  id: string;
+  name: string;
+  rate: number;
+  type: "inclusive" | "exclusive";
+  isDefault: boolean;
+  isActive: boolean;
+};
+
+export type MetricSet = {
   grossSales: number;
   netSales: number;
   transactions: number;
   avgTransaction: number;
   refunds: number;
-  topProducts: { name: string; quantity: number; revenue: number }[];
-  salesByPayment: { method: string; amount: number }[];
-  lowStock: { productId: string; name: string; outlet: string; stock: number }[];
+  discounts: number;
+  tax: number;
+  itemsSold: number;
+};
+
+export type TrendPoint = {
+  date: string;
+  label: string;
+  fullLabel: string;
+  value: number;
+  orders: number;
+};
+
+export type DashboardMetrics = {
+  period: { key: string; from: string; to: string; label: string; comparisonLabel: string };
+  current: MetricSet;
+  previous: MetricSet | null;
+  changes: {
+    netSales: number | null;
+    transactions: number | null;
+    avgTransaction: number | null;
+    itemsSold: number | null;
+  };
+  trend: TrendPoint[];
+  previousTrend: { date: string; value: number }[];
+  daily: DailySalesRow[];
+  trendComplete: boolean;
+  refundsComplete: boolean;
+  topProducts: { productId: string; name: string; quantity: number; revenue: number }[];
+  salesByPayment: { method: string; amount: number; count: number }[];
+  salesByCategory: { name: string; revenue: number; quantity: number }[];
+  lowStock: { productId: string; name: string; outlet: string; stock: number; threshold: number }[];
   recentTransactions: Transaction[];
+  lowStockThreshold: number;
+};
+
+export type DailySalesRow = {
+  date: string;
+  label: string;
+  orders: number;
+  grossSales: number;
+  discounts: number;
+  tax: number;
+  netSales: number;
+  itemsSold: number;
 };
 
 export type Paginated<T> = {
@@ -145,3 +250,5 @@ export type Paginated<T> = {
 
 export type Permission = string;
 export type Session = { user: User; business: Business; outlet: Outlet; permissions: Permission[] };
+
+export type ListParams = { page?: number; pageSize?: number; search?: string };

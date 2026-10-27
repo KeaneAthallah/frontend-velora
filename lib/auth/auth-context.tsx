@@ -1,6 +1,7 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { login as apiLogin, logout as apiLogout, me as apiMe } from "@/lib/api/auth";
 import { getAccessToken, setAccessToken } from "@/lib/api/client";
 import type { Session } from "@/lib/api/types";
@@ -10,6 +11,7 @@ interface AuthContextValue {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  refresh: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -17,44 +19,76 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     const token = getAccessToken();
     if (!token) {
-      const id = setTimeout(() => setLoading(false), 0);
-      return () => clearTimeout(id);
+      setLoading(false);
+      return;
     }
     let cancelled = false;
     apiMe()
-      .then((s) => { if (!cancelled) setSession(s); })
-      .catch(() => { if (!cancelled) { setAccessToken(null); setSession(null); } })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+      .then((next) => {
+        if (!cancelled) setSession(next);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAccessToken(null);
+          setSession(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const signIn = async (email: string, password: string) => {
-    setAccessToken(null);
-    const s = await apiLogin(email, password);
-    setSession(s);
-  };
+  const signIn = useCallback(
+    async (email: string, password: string) => {
+      queryClient.clear();
+      setAccessToken(null);
+      const next = await apiLogin(email, password);
+      setSession(next);
+    },
+    [queryClient]
+  );
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     await apiLogout().catch(() => {});
+    queryClient.clear();
     setSession(null);
-  };
+  }, [queryClient]);
 
-  return <AuthContext.Provider value={{ session, loading, signIn, signOut }}>{children}</AuthContext.Provider>;
+  const refresh = useCallback(async () => {
+    const next = await apiMe();
+    setSession(next);
+  }, []);
+
+  const value = useMemo(
+    () => ({ session, loading, signIn, signOut, refresh }),
+    [session, loading, signIn, signOut, refresh]
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) return { session: null, loading: false, signIn: async () => {}, signOut: async () => {} } as any;
-  return ctx;
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error("useAuth must be used inside AuthProvider");
+  }
+  return context;
 }
 
 export function usePermissions() {
   const { session } = useAuth();
-  const perms = session?.permissions ?? [];
-  const has = (p: string) => perms.includes("*") || perms.includes(p);
-  return { permissions: perms, has };
+  const permissions = React.useMemo(() => session?.permissions ?? [], [session]);
+  const has = useCallback(
+    (permission: string) => permissions.includes("*") || permissions.includes(permission),
+    [permissions]
+  );
+  return useMemo(() => ({ permissions, has }), [permissions, has]);
 }

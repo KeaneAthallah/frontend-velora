@@ -1,78 +1,157 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import Image from "next/image";
+import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/lib/auth/auth-context";
-import { useToast } from "@/components/ui/toast";
-import { Eye, EyeOff, ArrowRight } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, LockKeyhole } from "lucide-react";
+import { AuthShell } from "@/components/auth/auth-shell";
+import { Alert, Button, Field, Input } from "@/components/ui/primitives";
+import { USE_MOCK_API } from "@/lib/api/client";
+import { useAuth, usePermissions } from "@/lib/auth/auth-context";
+import { defaultRoute } from "@/lib/navigation";
 
 export default function LoginPage() {
-  const { session, signIn } = useAuth();
+  const { session, signIn, loading: authLoading } = useAuth();
+  const { has } = usePermissions();
   const router = useRouter();
-  const { push } = useToast();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPw, setShowPw] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [email, setEmail] = React.useState("");
+  const [password, setPassword] = React.useState("");
+  const [showPassword, setShowPassword] = React.useState(false);
+  const [submitting, setSubmitting] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
 
-  useEffect(() => {
-    if (session) router.replace("/");
-  }, [session, router]);
-
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      await signIn(email, password);
-    } catch (err) {
-      push({ title: "Login failed", description: (err as Error).message, variant: "error" });
-    } finally {
-      setLoading(false);
+  const nextPath = React.useCallback(() => {
+    if (typeof window === "undefined") return defaultRoute(has);
+    const requested = new URLSearchParams(window.location.search).get("next");
+    if (requested?.startsWith("/") && !requested.startsWith("//") && !requested.startsWith("/login")) {
+      return requested;
     }
+    return defaultRoute(has);
+  }, [has]);
+
+  React.useEffect(() => {
+    if (!authLoading && session) router.replace(nextPath());
+  }, [authLoading, session, router, nextPath]);
+
+  const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (submitting) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      await signIn(email.trim(), password);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Sign-in failed";
+      setError(
+        message.toLowerCase().includes("invalid")
+          ? "That email and password combination was not recognised."
+          : message
+      );
+      setSubmitting(false);
+      return;
+    }
+    setSubmitting(false);
   };
 
   return (
-    <div className="login">
-      <section className="login-hero">
-        <div>
-          <Image src="/brand/velora_primary_logo.png" alt="Velora" width={150} height={52} priority />
+    <AuthShell>
+      <div className="auth__form">
+        <div className="auth__form-head">
+          <span className="eyebrow">Welcome back</span>
+          <h1>Sign in to Velora</h1>
+          <p>Use the account your workspace administrator created for you.</p>
         </div>
-        <div>
-          <h1>Run your business with clarity.</h1>
-          <p>POS, inventory, purchasing, and reports — in one calm, fast workspace built for the way you actually work.</p>
-          <ul style={{ marginTop: 28, display: "grid", gap: 10, listStyle: "none", padding: 0, color: "hsl(0 0% 100% / 0.85)", fontSize: 14 }}>
-            <li>• Real-time stock across every outlet</li>
-            <li>• Fast, offline-friendly checkout</li>
-            <li>• Clear reports that don&apos;t need a spreadsheet</li>
-          </ul>
-        </div>
-        <div style={{ fontSize: 12, color: "hsl(0 0% 100% / 0.6)" }}>© Velora</div>
-      </section>
-      <section className="login-card">
-        <form className="lf" onSubmit={onSubmit}>
-          <h1>Sign in</h1>
-          <p className="muted">Use your Velora account to continue.</p>
-          <div className="field" style={{ marginTop: 12 }}>
-            <span>Email</span>
-            <input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@velora.test" required />
+
+        {error ? (
+          <Alert tone="danger" title="Could not sign in">
+            {error}
+          </Alert>
+        ) : null}
+
+        <form onSubmit={onSubmit} noValidate>
+          <div className="auth__fields">
+            <Field label="Email" htmlFor="email" required>
+              <Input
+                id="email"
+                name="email"
+                type="email"
+                inputMode="email"
+                autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
+                placeholder="you@company.com"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                required
+                aria-invalid={Boolean(error) || undefined}
+              />
+            </Field>
+
+            <Field
+              label="Password"
+              htmlFor="password"
+              required
+              aside={
+                <Link href="/forgot-password" className="hint">
+                  Forgot password?
+                </Link>
+              }
+            >
+              <div style={{ position: "relative" }}>
+                <Input
+                  id="password"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  required
+                  style={{ paddingRight: 38 }}
+                  aria-invalid={Boolean(error) || undefined}
+                />
+                <button
+                  type="button"
+                  className="password-toggle"
+                  onClick={() => setShowPassword((value) => !value)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  title={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
+                </button>
+              </div>
+            </Field>
           </div>
-          <div className="field">
-            <span>Password</span>
-            <div style={{ position: "relative" }}>
-              <input type={showPw ? "text" : "password"} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required style={{ width: "100%", paddingRight: 40 }} />
-              <button type="button" onClick={() => setShowPw((v) => !v)} aria-label={showPw ? "Hide password" : "Show password"} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: 0, cursor: "pointer", color: "hsl(var(--muted-foreground))" }}>
-                {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
-          </div>
-          <button className="btn primary block" type="submit" disabled={loading} style={{ marginTop: 8 }}>
-            {loading ? "Signing in…" : (<>Sign in <ArrowRight size={16} /></>)}
-          </button>
-          <Link className="link" href="/login">Forgot password?</Link>
         </form>
-      </section>
-    </div>
+
+        <Button
+          type="submit"
+          variant="primary"
+          size="lg"
+          block
+          loading={submitting}
+          style={{ marginTop: 24 }}
+        >
+          {submitting ? "Signing in…" : "Sign in"}
+          {!submitting ? <ArrowRight aria-hidden="true" /> : null}
+        </Button>
+
+        {USE_MOCK_API ? (
+          <div className="auth__demo">
+            <LockKeyhole
+              aria-hidden="true"
+              style={{ width: 13, height: 13, display: "inline", marginRight: 5 }}
+            />
+            <b>Local demo workspace.</b> Sign in with <code>admin@velora.test</code> and{" "}
+            <code>password</code>. Data is generated locally and resets when the dev session reloads.
+          </div>
+        ) : null}
+
+        <p className="auth__switch">
+          Need access or a password reset? Ask your workspace owner. Velora does not create
+          accounts from the public sign-in page.
+        </p>
+      </div>
+    </AuthShell>
   );
 }
