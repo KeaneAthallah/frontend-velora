@@ -51,10 +51,10 @@ export function LineChart({ data, labels }: { data: number[]; labels: string[] }
   const d = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className="chart" role="img" aria-label="Sales over the last 7 days">
-      <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#2563ff" stopOpacity=".22" /><stop offset="1" stopColor="#2563ff" stopOpacity="0" /></linearGradient></defs>
+      <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="hsl(var(--chart-1))" stopOpacity=".22" /><stop offset="1" stopColor="hsl(var(--chart-1))" stopOpacity="0" /></linearGradient></defs>
       <path d={`${d} L${pts[pts.length - 1][0]} ${h - 24} L${pts[0][0]} ${h - 24}Z`} fill="url(#g)" />
-      <path d={d} fill="none" stroke="#2563ff" strokeWidth="2.5" strokeLinejoin="round" />
-      {pts.map((p, i) => <g key={i}><circle cx={p[0]} cy={p[1]} r="3.5" fill="#fff" stroke="#2563ff" strokeWidth="2" /><text x={p[0]} y={h - 6} textAnchor="middle" fontSize="11" fill="#7a86a8">{labels[i]}</text></g>)}
+      <path d={d} fill="none" stroke="hsl(var(--chart-1))" strokeWidth="2.5" strokeLinejoin="round" />
+      {pts.map((p, i) => <g key={i}><circle cx={p[0]} cy={p[1]} r="3.5" fill="hsl(var(--canvas))" stroke="hsl(var(--chart-1))" strokeWidth="2" /><text x={p[0]} y={h - 6} textAnchor="middle" fontSize="11" fill="hsl(var(--muted-foreground))">{labels[i]}</text></g>)}
     </svg>
   );
 }
