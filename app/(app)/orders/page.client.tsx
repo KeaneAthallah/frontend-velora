@@ -33,7 +33,7 @@ import {
 import { Dialog } from "@/components/ui/dialog";
 import { AccessDenied } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
-import { listPaymentMethods } from "@/lib/api/business";
+import { listPaymentMethods } from "@/lib/api/payments";
 import {
   cancelOrder,
   checkoutOrder,
@@ -88,6 +88,7 @@ export default function OrdersPage() {
   const [showAll, setShowAll] = React.useState(false);
   const [checkoutTarget, setCheckoutTarget] = React.useState<Transaction | null>(null);
   const [paymentMethod, setPaymentMethod] = React.useState("cash");
+  const [checkoutReference, setCheckoutReference] = React.useState("");
   const [cancelTarget, setCancelTarget] = React.useState<Transaction | null>(null);
   const [cancelReason, setCancelReason] = React.useState("");
 
@@ -111,17 +112,19 @@ export default function OrdersPage() {
 
   const methodsQuery = useQuery({
     queryKey: ["payment-methods"],
-    queryFn: listPaymentMethods,
+    queryFn: () => listPaymentMethods(),
     enabled: has("orders.manage"),
     staleTime: 5 * 60_000,
   });
 
   React.useEffect(() => {
     const first = methodsQuery.data?.find((method) => method.active);
-    if (first && !methodsQuery.data?.some((method) => method.type === paymentMethod && method.active)) {
-      setPaymentMethod(first.type);
+    if (first && !methodsQuery.data?.some((method) => method.code === paymentMethod && method.active)) {
+      setPaymentMethod(first.code);
     }
   }, [methodsQuery.data, paymentMethod]);
+
+  const checkoutMethod = methodsQuery.data?.find((method) => method.code === paymentMethod);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["orders"] });
@@ -154,7 +157,17 @@ export default function OrdersPage() {
   });
 
   const checkoutMutation = useMutation({
-    mutationFn: () => checkoutOrder(checkoutTarget!.id, { paymentMethod }),
+    mutationFn: () =>
+      checkoutOrder(checkoutTarget!.id, {
+        paymentMethod,
+        payments: [
+          {
+            method: paymentMethod,
+            amount: checkoutTarget!.total,
+            reference: checkoutReference.trim() || undefined,
+          },
+        ],
+      }),
     onSuccess: (order) => {
       push({
         title: "Order checked out",
@@ -321,7 +334,10 @@ export default function OrdersPage() {
               <Button
                 size="sm"
                 variant="primary"
-                onClick={() => setCheckoutTarget(order)}
+                onClick={() => {
+                  setCheckoutReference("");
+                  setCheckoutTarget(order);
+                }}
                 disabled={checkoutMutation.isPending}
               >
                 Checkout
@@ -525,7 +541,7 @@ export default function OrdersPage() {
             <Button
               variant="primary"
               loading={checkoutMutation.isPending}
-              disabled={!methodsQuery.data?.some((method) => method.type === paymentMethod && method.active)}
+              disabled={!methodsQuery.data?.some((method) => method.code === paymentMethod && method.active)}
               onClick={() => checkoutMutation.mutate()}
             >
               Charge {checkoutTarget ? formatCurrency(checkoutTarget.total, currency) : ""}
@@ -544,12 +560,23 @@ export default function OrdersPage() {
               onChange={(event) => setPaymentMethod(event.target.value)}
             >
               {(methodsQuery.data ?? []).map((method) => (
-                <option key={method.id} value={method.type} disabled={!method.active}>
+                <option key={method.id} value={method.code} disabled={!method.active}>
                   {method.name}
                 </option>
               ))}
             </Select>
           </Field>
+          {checkoutMethod?.requiresReference ? (
+            <Field label={`${checkoutMethod.name} reference`} htmlFor="order-payment-reference">
+              <Input
+                id="order-payment-reference"
+                value={checkoutReference}
+                onChange={(event) => setCheckoutReference(event.target.value)}
+                placeholder="Approval or transaction code"
+                autoComplete="off"
+              />
+            </Field>
+          ) : null}
           {checkoutTarget?.items.length ? (
             <ul className="ledger" style={{ margin: 0 }}>
               {checkoutTarget.items.map((item, index) => (

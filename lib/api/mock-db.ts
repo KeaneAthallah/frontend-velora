@@ -46,6 +46,7 @@ import type {
   PaymentMethod,
   Product,
   PurchaseOrder,
+  Refund,
   Role,
   Supplier,
   TaxRate,
@@ -77,6 +78,7 @@ export const mockDb: {
   purchaseOrders: PurchaseOrder[];
   transactions: Transaction[];
   orders: Transaction[];
+  refunds: Refund[];
   movements: InventoryMovement[];
   modifierGroups: ModifierGroup[];
   modifierAssignments: Record<string, string[]>;
@@ -126,6 +128,7 @@ export const mockDb: {
     items: order.items.map((item) => ({ ...item })),
     payments: order.payments.map((payment) => ({ ...payment })),
   })),
+  refunds: [],
   movements: mockMovements.map((movement) => ({ ...movement })),
   modifierGroups: mockModifierGroups.map(cloneGroup),
   modifierAssignments: Object.fromEntries(

@@ -7,7 +7,6 @@ import {
   ArrowRight,
   Banknote,
   Building2,
-  CheckCircle2,
   CreditCard,
   InfoIcon,
   Pencil,
@@ -39,10 +38,16 @@ import { useToast } from "@/components/ui/toast";
 import {
   createOutlet,
   getBusinessDetails,
-  listPaymentMethods,
   updateBusiness,
   updateOutlet,
 } from "@/lib/api/business";
+import {
+  createPaymentMethod,
+  deletePaymentMethod,
+  listPaymentMethods,
+  updatePaymentMethod,
+  PAYMENT_METHOD_TYPES,
+} from "@/lib/api/payments";
 import {
   createTaxRate,
   deleteTaxRate,
@@ -1074,104 +1079,366 @@ function TaxEditor({
 }
 
 function PaymentsSection() {
+  const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ["payment-methods"],
-    queryFn: listPaymentMethods,
+    queryFn: () => listPaymentMethods(),
     staleTime: 5 * 60_000,
   });
+  const [editorOpen, setEditorOpen] = React.useState(false);
+  const [editing, setEditing] = React.useState<PaymentMethod | null>(null);
+  const methods = query.data ?? [];
 
   const icons: Record<string, React.ReactNode> = {
     cash: <Banknote aria-hidden="true" />,
     qris: <QrCode aria-hidden="true" />,
     debit_card: <CreditCard aria-hidden="true" />,
     credit_card: <CreditCard aria-hidden="true" />,
+    ewallet: <Wallet aria-hidden="true" />,
+    transfer: <Banknote aria-hidden="true" />,
   };
 
-  const descriptions: Record<string, string> = {
-    cash: "Cash tendered and change are recorded during checkout.",
-    qris: "Recorded as a QRIS payment. Velora does not confirm settlement with a payment provider.",
-    debit_card: "Recorded as a debit-card payment. Card capture happens outside Velora.",
-    credit_card: "Recorded as a credit-card payment. Card capture happens outside Velora.",
+  const openNew = () => {
+    setEditing(null);
+    setEditorOpen(true);
   };
-
-  const methods = query.data ?? [];
 
   return (
-    <Card>
-      <CardHeader className="card__head">
-        <div>
-          <h2>Payment methods</h2>
-          <p>
-            These are the rails the register can record on a sale. They are part of the checkout flow, not
-            configurable payment entities.
-          </p>
-        </div>
-        <Wallet aria-hidden="true" className="card-section-head__icon" />
-      </CardHeader>
+    <>
+      <Card>
+        <CardHeader className="card__head">
+          <div>
+            <h2>Payment methods</h2>
+            <p>
+              The rails the register can take at checkout. Cashier-facing names and availability are yours to
+              change; codes stay fixed so past payments keep reporting correctly.
+            </p>
+          </div>
+          <Button variant="secondary" size="sm" onClick={openNew}>
+            <Plus aria-hidden="true" /> Add method
+          </Button>
+        </CardHeader>
 
-      <CardBody>
-        <div style={{ padding: 16 }}>
-          {query.isError ? (
-            <InlineError
-              title="Payment methods could not be loaded"
-              error={query.error}
-              onRetry={() => query.refetch()}
-            />
-          ) : query.isLoading ? (
-            <SectionSkeleton />
-          ) : methods.length === 0 ? (
-            <EmptyState
-              icon={<Wallet aria-hidden="true" />}
-              title="No payment methods returned"
-              description="The checkout payment rails could not be read. Reload this page or check the API response."
-            />
-          ) : (
-            <div className="rail-grid">
-              {methods.map((method: PaymentMethod) => (
-                <div className="rail-card" key={method.id}>
-                  <span className="rail-card__icon">
-                    {icons[method.type] ?? <Wallet aria-hidden="true" />}
-                  </span>
-                  <div>
-                    <div className="row row-tight">
-                      <b>{method.name}</b>
-                      <Badge tone={method.active ? "success" : "neutral"} dot>
-                        {method.active ? "Available" : "Unavailable"}
-                      </Badge>
+        <CardBody>
+          <div style={{ padding: 16 }}>
+            {query.isError ? (
+              <InlineError
+                title="Payment methods could not be loaded"
+                error={query.error}
+                onRetry={() => query.refetch()}
+              />
+            ) : query.isLoading ? (
+              <SectionSkeleton />
+            ) : methods.length === 0 ? (
+              <EmptyState
+                icon={<Wallet aria-hidden="true" />}
+                title="No payment methods"
+                description="Checkout cannot take payment until at least one method exists."
+                actions={
+                  <Button variant="primary" onClick={openNew}>
+                    Add first method
+                  </Button>
+                }
+              />
+            ) : (
+              <div className="setting-list">
+                {methods.map((method) => (
+                  <div className="setting-row" key={method.id}>
+                    <span className="setting-row__icon" aria-hidden="true">
+                      {icons[method.type] ?? <Wallet aria-hidden="true" />}
+                    </span>
+                    <div className="setting-row__body">
+                      <div className="row row-tight wrap">
+                        <b>{method.name}</b>
+                        {!method.active ? <Badge tone="neutral">Inactive</Badge> : null}
+                        {method.requiresReference ? <Badge tone="info">Reference</Badge> : null}
+                      </div>
+                      <div className="hint" style={{ marginTop: 3 }}>
+                        <span className="mono">{method.code}</span>
+                        <span aria-hidden="true"> · </span>
+                        {method.type === "cash"
+                          ? "Cash tendered and change are tracked at checkout."
+                          : "Recorded against the sale; settlement happens outside Velora."}
+                      </div>
                     </div>
-                    <p className="hint" style={{ margin: "4px 0 0" }}>
-                      {descriptions[method.type] ?? "Recorded as a payment method on each sale."}
-                    </p>
+                    <Button
+                      variant="quiet"
+                      size="sm"
+                      onClick={() => {
+                        setEditing(method);
+                        setEditorOpen(true);
+                      }}
+                    >
+                      <Pencil aria-hidden="true" /> Edit
+                    </Button>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
 
-          <div className="alert alert--info" style={{ marginTop: 14 }}>
-            <Info aria-hidden="true" />
-            <div>
-              <b>No settlement integration.</b>
-              <p className="hint" style={{ margin: "3px 0 0", color: "inherit" }}>
-                Velora records the chosen method and amount. It does not capture cards, generate QR codes, or confirm
-                bank settlement. Taxes applied to a sale come from the active default tax rate.
-              </p>
+            <div className="alert alert--info" style={{ marginTop: 14 }}>
+              <Info aria-hidden="true" />
+              <div>
+                <b>No settlement integration.</b>
+                <p className="hint" style={{ margin: "3px 0 0", color: "inherit" }}>
+                  Velora records the chosen method and amount, plus an optional reference. It does not capture cards,
+                  generate QR codes, or confirm bank settlement. A method used by any payment can be deactivated but
+                  not deleted.
+                </p>
+              </div>
             </div>
           </div>
+        </CardBody>
+      </Card>
 
-          {methods.length > 0 && methods.every((method) => method.active) ? (
-            <div className="row row-tight" style={{ marginTop: 12 }}>
-              <CheckCircle2
-                aria-hidden="true"
-                style={{ width: 14, height: 14, color: "hsl(var(--success))" }}
-              />
-              <span className="hint" style={{ margin: 0 }}>
-                All four rails are available at checkout.
-              </span>
+      <PaymentMethodEditor
+        open={editorOpen}
+        method={editing}
+        onClose={() => setEditorOpen(false)}
+        onSaved={() => {
+          setEditorOpen(false);
+          void queryClient.invalidateQueries({ queryKey: ["payment-methods"] });
+        }}
+      />
+    </>
+  );
+}
+
+function PaymentMethodEditor({
+  open,
+  method,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  method: PaymentMethod | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { push } = useToast();
+  const [form, setForm] = React.useState({
+    name: "",
+    code: "",
+    type: "cash",
+    requiresReference: false,
+    isActive: true,
+    sortOrder: "0",
+  });
+  const [error, setError] = React.useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!open) return;
+    setForm({
+      name: method?.name ?? "",
+      code: method?.code ?? "",
+      type: method?.type ?? "other",
+      requiresReference: method?.requiresReference ?? false,
+      isActive: method?.active ?? true,
+      sortOrder: String(method?.sortOrder ?? 0),
+    });
+    setError(null);
+    setDeleteOpen(false);
+  }, [open, method]);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const name = form.name.trim();
+      if (!name) throw new Error("Enter a name for the payment method.");
+      const sortOrder = Number(form.sortOrder);
+      if (!Number.isFinite(sortOrder) || sortOrder < 0) {
+        throw new Error("Sort order must be zero or greater.");
+      }
+      if (method) {
+        return updatePaymentMethod(method.id, {
+          name,
+          type: form.type,
+          requiresReference: form.requiresReference,
+          isActive: form.isActive,
+          sortOrder,
+        });
+      }
+      return createPaymentMethod({
+        name,
+        code: form.code.trim() || undefined,
+        type: form.type,
+        requiresReference: form.requiresReference,
+        isActive: form.isActive,
+        sortOrder,
+      });
+    },
+    onSuccess: (saved) => {
+      push({
+        title: method ? "Payment method updated" : "Payment method added",
+        description: `${saved.name} · ${saved.code}.`,
+        variant: "success",
+      });
+      onSaved();
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "The payment method could not be saved.");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      if (!method) throw new Error("No payment method selected.");
+      await deletePaymentMethod(method.id);
+    },
+    onSuccess: () => {
+      push({
+        title: "Payment method deleted",
+        description: `${method?.name} was removed.`,
+        variant: "success",
+      });
+      setDeleteOpen(false);
+      onSaved();
+    },
+    onError: (err) => {
+      setDeleteOpen(false);
+      setError(err instanceof Error ? err.message : "The payment method could not be deleted.");
+    },
+  });
+
+  return (
+    <>
+      <Sheet
+        open={open}
+        onClose={() => {
+          if (!saveMutation.isPending) onClose();
+        }}
+        title={method ? "Edit payment method" : "Add payment method"}
+        description="Codes are permanent because recorded payments reference them. Rename or deactivate instead."
+        width={500}
+        footer={
+          <>
+            {method ? (
+              <Button
+                variant="danger-quiet"
+                onClick={() => setDeleteOpen(true)}
+                disabled={saveMutation.isPending}
+              >
+                <Trash2 aria-hidden="true" /> Delete
+              </Button>
+            ) : null}
+            <Button
+              variant="ghost"
+              onClick={onClose}
+              disabled={saveMutation.isPending}
+              style={{ marginLeft: method ? 0 : "auto" }}
+            >
+              Close
+            </Button>
+            <Button
+              variant="primary"
+              loading={saveMutation.isPending}
+              onClick={() => saveMutation.mutate()}
+            >
+              {method ? "Save method" : "Create method"}
+            </Button>
+          </>
+        }
+      >
+        <form
+          className="stack gap-3"
+          style={{ gap: 15 }}
+          onSubmit={(event) => {
+            event.preventDefault();
+            saveMutation.mutate();
+          }}
+        >
+          {error ? (
+            <div className="alert alert--danger" role="alert">
+              {error}
             </div>
           ) : null}
-        </div>
-      </CardBody>
-    </Card>
+
+          <div className="grid grid-2 gap-3">
+            <Field label="Name" htmlFor="payment-name" required>
+              <Input
+                id="payment-name"
+                value={form.name}
+                onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+                placeholder="ShopeePay"
+                autoFocus
+              />
+            </Field>
+            <Field
+              label="Code"
+              htmlFor="payment-code"
+              hint={method ? "Codes cannot change once saved." : "Optional. Derived from the name when empty."}
+            >
+              <Input
+                id="payment-code"
+                value={form.code}
+                onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))}
+                placeholder="shopeepay"
+                disabled={Boolean(method)}
+                autoComplete="off"
+              />
+            </Field>
+          </div>
+
+          <div className="grid grid-2 gap-3">
+            <Field label="Type" htmlFor="payment-type">
+              <Select
+                id="payment-type"
+                value={form.type}
+                onChange={(event) => setForm((current) => ({ ...current, type: event.target.value }))}
+              >
+                {PAYMENT_METHOD_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {type.replaceAll("_", " ")}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Sort order" htmlFor="payment-sort" hint="Lower numbers appear first at checkout.">
+              <Input
+                id="payment-sort"
+                type="number"
+                min="0"
+                step="1"
+                inputMode="numeric"
+                value={form.sortOrder}
+                onChange={(event) => setForm((current) => ({ ...current, sortOrder: event.target.value }))}
+              />
+            </Field>
+          </div>
+
+          <div className="stack-sm">
+            <Switch
+              checked={form.isActive}
+              onChange={(event) => setForm((current) => ({ ...current, isActive: event.target.checked }))}
+              label="Available at checkout"
+              description="Inactive methods stay on historical payments but cannot be chosen."
+            />
+            <Switch
+              checked={form.requiresReference}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, requiresReference: event.target.checked }))
+              }
+              label="Ask for a reference"
+              description="Card, transfer and wallet captures usually have an approval code to record."
+            />
+          </div>
+        </form>
+      </Sheet>
+
+      <ConfirmDialog
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        onConfirm={() => deleteMutation.mutate()}
+        title="Delete this payment method?"
+        description={
+          <>
+            <b>{method?.name}</b> will no longer be offered at checkout. Methods that already have payments cannot be
+            deleted — deactivate those instead so reporting stays intact.
+          </>
+        }
+        confirmLabel="Delete method"
+        loading={deleteMutation.isPending}
+      />
+    </>
   );
 }

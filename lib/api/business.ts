@@ -1,6 +1,6 @@
 import { apiRequest, USE_MOCK_API } from "./client";
 import { mockDb, mockId } from "./mock-db";
-import type { Business, Outlet, PaymentMethod } from "./types";
+import type { Business, Outlet } from "./types";
 
 function mapBusiness(business: any): Business {
   return {
@@ -135,14 +135,3 @@ export async function updateOutlet(
   return mapOutlet(data);
 }
 
-export async function listPaymentMethods(): Promise<PaymentMethod[]> {
-  if (USE_MOCK_API) return mockDb.paymentMethods.map((method) => ({ ...method }));
-  // Payment methods are recorded as free-form strings by the API. These are
-  // the rails the checkout flow supports today, not configurable entities.
-  return [
-    { id: "pm1", name: "Cash", type: "cash", active: true },
-    { id: "pm2", name: "QRIS", type: "qris", active: true },
-    { id: "pm3", name: "Debit Card", type: "debit_card", active: true },
-    { id: "pm4", name: "Credit Card", type: "credit_card", active: true },
-  ];
-}

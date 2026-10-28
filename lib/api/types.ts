@@ -177,6 +177,39 @@ export type Payment = {
   createdAt: string;
 };
 
+export type PaymentInput = {
+  method: string;
+  amount: number;
+  reference?: string;
+};
+
+export type RefundStatus = "pending" | "approved" | "rejected" | "completed";
+
+export type Refund = {
+  id: string;
+  saleId: string;
+  paymentId?: string;
+  amount: number;
+  reason?: string;
+  status: RefundStatus;
+  createdAt: string;
+  approvedAt?: string;
+  completedAt?: string;
+  sale?: {
+    id: string;
+    receiptNumber: string;
+    orderNumber?: string;
+    total: number;
+    status: string;
+  };
+  payment?: {
+    id: string;
+    method: string;
+    amount: number;
+    status: string;
+  };
+};
+
 export type OrderType = "dine_in" | "takeaway" | "delivery" | "pickup";
 
 export type OrderStatus = "open" | "in_kitchen" | "ready" | "served" | "completed" | "cancelled";
@@ -350,9 +383,12 @@ export type Transaction = {
   discount: number;
   tax: number;
   total: number;
+  paidAmount?: number;
+  changeAmount?: number;
   paymentStatus: "pending" | "paid" | "failed" | "refunded" | "partially_refunded";
   status: "completed" | "voided" | "refunded";
   payments: Payment[];
+  refunds?: Refund[];
   notes?: string;
   createdAt: string;
   orderNumber?: string;
@@ -366,7 +402,16 @@ export type Transaction = {
   servedAt?: string;
 };
 
-export type PaymentMethod = { id: string; name: string; type: string; active: boolean };
+export type PaymentMethod = {
+  id: string;
+  code: string;
+  name: string;
+  type: string;
+  requiresReference: boolean;
+  active: boolean;
+  sortOrder: number;
+  settings?: Record<string, unknown>;
+};
 
 export type InventoryMovement = {
   id: string;

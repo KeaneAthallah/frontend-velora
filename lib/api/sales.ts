@@ -1,8 +1,9 @@
 import { format } from "date-fns";
 import { apiRequest, USE_MOCK_API } from "./client";
 import { adjustMockStock, consumeMockIngredients, mockDb, mockId, mockLinePrice, mockNextOrderNumber, mockProduct, reverseMockIngredients } from "./mock-db";
+import { buildPaymentBatch, mockRecordPayments, normalizeRefund } from "./payments";
 import { mockActiveOrderForTable } from "./tables";
-import type { OrderFulfilment, OrderType, Paginated, Transaction } from "./types";
+import type { OrderFulfilment, OrderType, Paginated, PaymentInput, Transaction } from "./types";
 
 export function mapSale(sale: any): Transaction {
   const payments = (sale.payments ?? []).map((payment: any) => ({
@@ -19,11 +20,13 @@ export function mapSale(sale: any): Transaction {
   const paymentStatus: Transaction["paymentStatus"] =
     sale.status === "refunded"
       ? "refunded"
-      : paid >= total && total > 0
-        ? "paid"
-        : paid > 0
-          ? "partially_refunded"
-          : "pending";
+      : sale.status === "partially_refunded"
+        ? "partially_refunded"
+        : paid >= total && total > 0
+          ? "paid"
+          : paid > 0
+            ? "partially_refunded"
+            : "pending";
   const status: Transaction["status"] =
     sale.status === "voided" ? "voided" : sale.status === "refunded" ? "refunded" : "completed";
 
@@ -51,9 +54,12 @@ export function mapSale(sale: any): Transaction {
     discount: Number(sale.discount_amount ?? 0),
     tax: Number(sale.tax_amount ?? 0),
     total,
+    paidAmount: Number(sale.paid_amount ?? 0),
+    changeAmount: Number(sale.change_amount ?? 0),
     paymentStatus,
     status,
     payments,
+    refunds: Array.isArray(sale.refunds) ? sale.refunds.map(normalizeRefund) : [],
     notes: sale.notes ?? undefined,
     createdAt: sale.created_at ?? new Date().toISOString(),
     orderNumber: sale.order_number ?? undefined,
@@ -210,6 +216,7 @@ export async function checkout(request: {
   notes?: string;
   idempotencyKey: string;
   paymentMethod?: string;
+  payments?: PaymentInput[];
   orderType?: OrderType;
   tableId?: string;
   fulfilment?: OrderFulfilment;
@@ -256,10 +263,11 @@ export async function checkout(request: {
     const outlet = mockDb.outlets.find((item) => item.id === request.outletId);
     const cashier = mockDb.employees.find((employee) => employee.userId === request.cashierId) ?? mockDb.employees[0];
     const customer = mockDb.customers.find((item) => item.id === request.customerId);
-    const method = request.paymentMethod ?? "Cash";
     const now = new Date();
     const sequence = mockDb.transactions.length + 1;
     const orderNumber = mockNextOrderNumber(request.outletId, orderType, now);
+    const batch = buildPaymentBatch(total, request.payments, request.paymentMethod ?? "cash");
+    const recorded = mockRecordPayments(total, batch);
     const transaction: Transaction = {
       id: mockId("tx"),
       receiptNumber: `R-${format(now, "yyyyMMdd")}-${String(sequence).padStart(4, "0")}`,
@@ -274,17 +282,11 @@ export async function checkout(request: {
       discount,
       tax,
       total,
+      paidAmount: recorded.paid,
+      changeAmount: recorded.change,
       paymentStatus: "paid",
       status: "completed",
-      payments: [
-        {
-          id: mockId("pay"),
-          method,
-          amount: total,
-          status: "success",
-          createdAt: now.toISOString(),
-        },
-      ],
+      payments: recorded.payments,
       notes: request.notes,
       createdAt: now.toISOString(),
       orderNumber,
@@ -355,25 +357,23 @@ export async function checkout(request: {
     idempotencyKey: request.idempotencyKey,
   });
 
-  let paymentFailed = false;
-  try {
-    await apiRequest<any>("/payments", {
-      method: "POST",
-      body: {
-        sale_id: Number(sale.id),
-        method: (request.paymentMethod ?? "cash").toLowerCase(),
-        amount: Number(sale.total),
-        idempotency_key: `${request.idempotencyKey}-payment`,
-      },
-    });
-  } catch {
-    paymentFailed = true;
-  }
+  // The sale total is authoritative (tax is rounded per line server-side), so
+  // the payment batch is fitted to it before it is recorded. Keeping this as a
+  // second call also means a retry of the same checkout (same idempotency key)
+  // resumes where it stopped instead of charging twice.
+  const batch = buildPaymentBatch(Number(sale.total), request.payments, request.paymentMethod ?? "cash");
+  await apiRequest<any>(`/sales/${sale.id}/payments`, {
+    method: "POST",
+    body: {
+      payments: batch.map((line) => ({
+        method: line.method,
+        amount: line.amount,
+        reference: line.reference,
+      })),
+      idempotency_key: `${request.idempotencyKey}:payment`,
+    },
+  });
 
   const full = await apiRequest<any>(`/sales/${sale.id}`);
-  const mapped = mapSale(full);
-  if (paymentFailed) {
-    mapped.paymentStatus = "pending";
-  }
-  return mapped;
+  return mapSale(full);
 }

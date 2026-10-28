@@ -11,6 +11,7 @@ import {
 } from "./mock-db";
 import { mapSale } from "./sales";
 import { mockFireOrder, mockSyncTicketsFromOrder, mockVoidTicketsForOrder } from "./kitchen";
+import { buildPaymentBatch, mockRecordPayments } from "./payments";
 import { mockActiveOrderForTable } from "./tables";
 import type {
   CreateOrderRequest,
@@ -19,6 +20,7 @@ import type {
   OrderStatus,
   OrderType,
   Paginated,
+  PaymentInput,
   Transaction,
   UpdateOrderRequest,
 } from "./types";
@@ -359,7 +361,7 @@ export async function setOrderStatus(id: string, status: OrderStatus): Promise<T
 
 export async function checkoutOrder(
   id: string,
-  options?: { paymentMethod?: string }
+  options?: { paymentMethod?: string; payments?: PaymentInput[]; idempotencyKey?: string }
 ): Promise<Transaction> {
   const paymentMethod = options?.paymentMethod ?? "cash";
 
@@ -368,6 +370,9 @@ export async function checkoutOrder(
     if (!order) throw new Error("Order not found");
     if (!ACTIVE_STATUSES.includes(order.orderStatus!)) throw new Error("Only open orders can be checked out");
     if (!order.items.length) throw new Error("Add at least one item before checkout");
+
+    const batch = buildPaymentBatch(order.total, options?.payments, paymentMethod);
+    const recorded = mockRecordPayments(order.total, batch);
 
     const now = new Date();
     const sequence = mockDb.transactions.length + 1;
@@ -403,44 +408,34 @@ export async function checkoutOrder(
     order.orderStatus = "completed";
     order.servedAt = order.servedAt ?? now.toISOString();
     order.status = "completed";
+    order.paidAmount = recorded.paid;
+    order.changeAmount = recorded.change;
     order.paymentStatus = "paid";
-    order.payments = [
-      {
-        id: mockId("pay"),
-        method: paymentMethod,
-        amount: order.total,
-        status: "success",
-        createdAt: now.toISOString(),
-      },
-    ];
+    order.payments = recorded.payments;
 
     mockDb.orders = mockDb.orders.filter((entry) => entry.id !== order.id);
     mockDb.transactions = [order, ...mockDb.transactions];
     return order;
   }
 
-  const checkedOut = mapSale(
-    await apiRequest<any>(`/orders/${id}/checkout`, { method: "POST" })
-  );
+  // The open order already carries its authoritative total, so the batch can
+  // be fitted before checkout and recorded in the same transaction.
+  const order = mapSale(await apiRequest<any>(`/orders/${id}`));
+  const batch = buildPaymentBatch(order.total, options?.payments, paymentMethod);
 
-  let paymentFailed = false;
-  try {
-    await apiRequest<any>("/payments", {
-      method: "POST",
-      body: {
-        sale_id: Number(id),
-        method: paymentMethod.toLowerCase(),
-        amount: checkedOut.total,
-        idempotency_key: `order-${id}-payment`,
-      },
-    });
-  } catch {
-    paymentFailed = true;
-  }
+  const checkedOut = await apiRequest<any>(`/orders/${id}/checkout`, {
+    method: "POST",
+    body: {
+      payments: batch.map((line) => ({
+        method: line.method,
+        amount: line.amount,
+        reference: line.reference,
+      })),
+      idempotency_key: options?.idempotencyKey ? `${options.idempotencyKey}:payment` : undefined,
+    },
+  });
 
-  const full = mapSale(await apiRequest<any>(`/orders/${id}`));
-  if (paymentFailed) full.paymentStatus = "pending";
-  return full;
+  return mapSale(checkedOut);
 }
 
 export async function cancelOrder(id: string, reason: string): Promise<Transaction> {

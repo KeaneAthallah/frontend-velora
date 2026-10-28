@@ -36,8 +36,9 @@ import { Dialog, Sheet } from "@/components/ui/dialog";
 import { AccessDenied, InlineError } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
 import { getTransaction, listTransactions, voidTransaction } from "@/lib/api/sales";
+import { approveRefund, listRefunds, rejectRefund, requestRefund } from "@/lib/api/payments";
 import { paymentMethodLabel } from "@/lib/api/reports";
-import type { Transaction } from "@/lib/api/types";
+import type { Payment, Refund, Transaction } from "@/lib/api/types";
 import { formatCurrency, formatDateTime, formatTime } from "@/lib/formatting/currency";
 import { itemCount, transactionLabel, transactionState, transactionTone } from "@/lib/formatting/transaction";
 import { useBusiness } from "@/lib/business/context";
@@ -69,6 +70,10 @@ export default function TransactionsPage() {
   const [voidOpen, setVoidOpen] = React.useState(false);
   const [voidReason, setVoidReason] = React.useState("");
   const [voidError, setVoidError] = React.useState<string | null>(null);
+  const [refundPayment, setRefundPayment] = React.useState<Payment | null>(null);
+  const [refundAmount, setRefundAmount] = React.useState("");
+  const [refundReason, setRefundReason] = React.useState("");
+  const [refundError, setRefundError] = React.useState<string | null>(null);
   const debounced = useDebouncedValue(search, 300);
 
   React.useEffect(() => {
@@ -111,6 +116,72 @@ export default function TransactionsPage() {
     enabled: Boolean(selectedId) && has("sales.view"),
   });
 
+  const refundsQuery = useQuery({
+    queryKey: ["refunds", selectedId],
+    queryFn: () => listRefunds({ saleId: selectedId!, pageSize: 50 }),
+    enabled: Boolean(selectedId) && has("sales.refund"),
+    staleTime: 10_000,
+  });
+
+  const refunds = refundsQuery.data?.data ?? [];
+
+  const refreshAfterRefund = async () => {
+    await queryClient.invalidateQueries({ queryKey: ["refunds", selectedId] });
+    await queryClient.invalidateQueries({ queryKey: ["transaction", selectedId] });
+    await queryClient.invalidateQueries({ queryKey: ["transactions"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    queryClient.invalidateQueries({ queryKey: ["reports"] });
+  };
+
+  const refundMutation = useMutation({
+    mutationFn: async () => {
+      if (!refundPayment) throw new Error("Choose a payment to refund.");
+      const amount = Number(refundAmount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new Error("Enter a refund amount greater than zero.");
+      }
+      return requestRefund(refundPayment.id, {
+        amount,
+        reason: refundReason.trim() || undefined,
+      });
+    },
+    onSuccess: async (refund) => {
+      push({
+        title: "Refund requested",
+        description: `${formatCurrency(refund.amount, currency)} is pending approval.`,
+        variant: "success",
+      });
+      setRefundPayment(null);
+      setRefundAmount("");
+      setRefundReason("");
+      setRefundError(null);
+      await refreshAfterRefund();
+    },
+    onError: (error) => {
+      setRefundError(error instanceof Error ? error.message : "The refund could not be requested.");
+    },
+  });
+
+  const refundDecision = useMutation({
+    mutationFn: ({ refund, action }: { refund: Refund; action: "approve" | "reject" }) =>
+      action === "approve" ? approveRefund(refund.id) : rejectRefund(refund.id),
+    onSuccess: async (refund, variables) => {
+      push({
+        title: variables.action === "approve" ? "Refund approved" : "Refund rejected",
+        description: `${formatCurrency(refund.amount, currency)} · ${refund.status}.`,
+        variant: "success",
+      });
+      await refreshAfterRefund();
+    },
+    onError: (error) => {
+      push({
+        title: "Refund could not be updated",
+        description: error instanceof Error ? error.message : "Try again.",
+        variant: "error",
+      });
+    },
+  });
+
   const voidMutation = useMutation({
     mutationFn: () => voidTransaction(selectedId!, voidReason.trim()),
     onSuccess: async () => {
@@ -137,6 +208,14 @@ export default function TransactionsPage() {
 
   const rows = query.data?.data ?? [];
   const currency = session?.business.currency ?? "IDR";
+  const refundedFor = (paymentId: string) =>
+    refunds
+      .filter(
+        (refund) =>
+          refund.paymentId === paymentId &&
+          ["pending", "approved", "completed"].includes(refund.status)
+      )
+      .reduce((sum, refund) => sum + refund.amount, 0);
   const activeFilters = Boolean(debounced.trim()) || Boolean(status) || range !== "30d";
 
   const columns: Column<Transaction>[] = [
@@ -411,7 +490,21 @@ export default function TransactionsPage() {
             <Skeleton style={{ height: 90 }} />
           </div>
         ) : (
-          <TransactionDetail transaction={detail.data} currency={currency} />
+          <TransactionDetail
+            transaction={detail.data}
+            currency={currency}
+            refunds={refunds}
+            refundsLoading={refundsQuery.isLoading}
+            canRefund={has("sales.refund")}
+            decisionPending={refundDecision.isPending}
+            onRequestRefund={(payment) => {
+              setRefundError(null);
+              setRefundPayment(payment);
+              setRefundAmount(String(Math.max(0, payment.amount - refundedFor(payment.id))));
+              setRefundReason("");
+            }}
+            onDecideRefund={(refund, action) => refundDecision.mutate({ refund, action })}
+          />
         )}
       </Sheet>
 
@@ -456,11 +549,116 @@ export default function TransactionsPage() {
           />
         </Field>
       </Dialog>
+
+      <Dialog
+        open={Boolean(refundPayment)}
+        onClose={() => {
+          if (!refundMutation.isPending) setRefundPayment(null);
+        }}
+        title="Request a refund"
+        description={
+          refundPayment
+            ? `${paymentMethodLabel(refundPayment.method)} · ${formatCurrency(refundPayment.amount, currency)} captured`
+            : undefined
+        }
+        width={440}
+        footer={
+          <>
+            <Button
+              variant="ghost"
+              onClick={() => setRefundPayment(null)}
+              disabled={refundMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              loading={refundMutation.isPending}
+              disabled={!Number(refundAmount)}
+              onClick={() => refundMutation.mutate()}
+            >
+              Request refund
+            </Button>
+          </>
+        }
+      >
+        <div className="stack" style={{ gap: 14 }}>
+          <Field
+            label="Amount"
+            htmlFor="refund-amount"
+            required
+            error={refundError}
+            hint={
+              refundPayment
+                ? `Refundable ${formatCurrency(
+                    Math.max(0, refundPayment.amount - refundedFor(refundPayment.id)),
+                    currency
+                  )}. Pending refunds reserve their amount.`
+                : undefined
+            }
+          >
+            <Input
+              id="refund-amount"
+              type="number"
+              min="0"
+              step="0.01"
+              inputMode="decimal"
+              value={refundAmount}
+              onChange={(event) => setRefundAmount(event.target.value)}
+              autoFocus
+            />
+          </Field>
+          <Field
+            label="Reason"
+            htmlFor="refund-reason"
+            hint="Shown in the refund queue and kept in the audit trail."
+          >
+            <Textarea
+              id="refund-reason"
+              value={refundReason}
+              onChange={(event) => setRefundReason(event.target.value)}
+              placeholder="For example: spilled drink, wrong item, duplicate charge"
+              rows={3}
+            />
+          </Field>
+          <div className="alert alert--info">
+            Refunds start as pending. Approving one marks the payment and sale as
+            partially or fully refunded; rejecting it releases the reserved amount.
+          </div>
+        </div>
+      </Dialog>
     </>
   );
 }
 
-function TransactionDetail({ transaction, currency }: { transaction: Transaction; currency: string }) {
+function TransactionDetail({
+  transaction,
+  currency,
+  refunds,
+  refundsLoading,
+  canRefund,
+  decisionPending,
+  onRequestRefund,
+  onDecideRefund,
+}: {
+  transaction: Transaction;
+  currency: string;
+  refunds: Refund[];
+  refundsLoading: boolean;
+  canRefund: boolean;
+  decisionPending: boolean;
+  onRequestRefund: (payment: Payment) => void;
+  onDecideRefund: (refund: Refund, action: "approve" | "reject") => void;
+}) {
+  const refundedFor = (paymentId: string) =>
+    refunds
+      .filter(
+        (refund) =>
+          refund.paymentId === paymentId &&
+          ["pending", "approved", "completed"].includes(refund.status)
+      )
+      .reduce((sum, refund) => sum + refund.amount, 0);
+
   return (
     <div className="stack" style={{ gap: 22 }}>
       <div className="row between wrap">
@@ -536,23 +734,110 @@ function TransactionDetail({ transaction, currency }: { transaction: Transaction
         </div>
         {transaction.payments.length ? (
           <div className="stack-sm">
-            {transaction.payments.map((payment) => (
-              <div key={payment.id} className="row between" style={{ fontSize: 12.5 }}>
-                <span>
-                  {paymentMethodLabel(payment.method)}
-                  {payment.reference ? <span className="hint"> · {payment.reference}</span> : null}
-                </span>
-                <span className="row row-tight">
-                  <StatusBadge status={payment.status} />
-                  <b className="num">{formatCurrency(payment.amount, currency)}</b>
-                </span>
-              </div>
-            ))}
+            {transaction.payments.map((payment) => {
+              const refundable = Math.max(0, payment.amount - refundedFor(payment.id));
+              return (
+                <div className="stack-sm" key={payment.id}>
+                  <div className="row between" style={{ fontSize: 12.5 }}>
+                    <span>
+                      {paymentMethodLabel(payment.method)}
+                      {payment.reference ? <span className="hint"> · {payment.reference}</span> : null}
+                    </span>
+                    <span className="row row-tight">
+                      <StatusBadge status={payment.status} />
+                      <b className="num">{formatCurrency(payment.amount, currency)}</b>
+                    </span>
+                  </div>
+                  {canRefund && refundable > 0.005 && payment.status !== "failed" ? (
+                    <div className="row" style={{ justifyContent: "flex-end" }}>
+                      <Button variant="quiet" size="sm" onClick={() => onRequestRefund(payment)}>
+                        Refund
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         ) : (
           <p className="hint">No payment was recorded against this receipt.</p>
         )}
       </div>
+
+      {canRefund ? (
+        <div>
+          <div className="eyebrow" style={{ marginBottom: 8 }}>
+            Refunds
+          </div>
+          {refundsLoading ? (
+            <p className="hint">Loading refunds…</p>
+          ) : refunds.length ? (
+            <div className="stack-sm">
+              {refunds.map((refund) => (
+                <div
+                  key={refund.id}
+                  className="stack-sm"
+                  style={{ border: "1px solid hsl(var(--border))", borderRadius: 10, padding: 10 }}
+                >
+                  <div className="row between wrap" style={{ gap: 8 }}>
+                    <span>
+                      <b className="num">{formatCurrency(refund.amount, currency)}</b>
+                      <span className="hint">
+                        {" "}
+                        · {refund.payment ? paymentMethodLabel(refund.payment.method) : "Payment"}
+                      </span>
+                    </span>
+                    <Badge
+                      tone={
+                        refund.status === "completed"
+                          ? "success"
+                          : refund.status === "pending"
+                            ? "warning"
+                            : refund.status === "rejected"
+                              ? "danger"
+                              : "neutral"
+                      }
+                      dot
+                    >
+                      {refund.status}
+                    </Badge>
+                  </div>
+                  {refund.reason ? (
+                    <p className="hint" style={{ margin: 0 }}>
+                      {refund.reason}
+                    </p>
+                  ) : null}
+                  <div className="row between wrap" style={{ gap: 8 }}>
+                    <span className="hint">{formatDateTime(refund.createdAt)}</span>
+                    {refund.status === "pending" ? (
+                      <span className="row row-tight">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={decisionPending}
+                          onClick={() => onDecideRefund(refund, "reject")}
+                        >
+                          Reject
+                        </Button>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          disabled={decisionPending}
+                          onClick={() => onDecideRefund(refund, "approve")}
+                        >
+                          Approve
+                        </Button>
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="hint">No refunds for this receipt.</p>
+          )}
+        </div>
+      ) : null}
 
       {transaction.notes ? (
         <div>

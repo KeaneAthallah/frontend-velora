@@ -32,6 +32,7 @@ import {
   Field,
   InfoTip,
   Input,
+  Select,
   Spinner,
 } from "@/components/ui/primitives";
 import { Dialog } from "@/components/ui/dialog";
@@ -39,7 +40,7 @@ import { AccessDenied } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
 import { listCategories, listProducts } from "@/lib/api/products";
 import { getMenu } from "@/lib/api/menu";
-import { listPaymentMethods } from "@/lib/api/business";
+import { listPaymentMethods } from "@/lib/api/payments";
 import { listTaxRates } from "@/lib/api/tax";
 import { checkout } from "@/lib/api/sales";
 import { checkoutOrder, createOrder, getOrder, updateOrder } from "@/lib/api/orders";
@@ -76,6 +77,13 @@ type CartLine = {
   stock: number;
 };
 
+type SplitLine = {
+  id: string;
+  method: string;
+  amount: string;
+  reference: string;
+};
+
 function lineKey(productId: string, optionIds: string[]) {
   return optionIds.length ? `${productId}|${[...optionIds].sort().join(",")}` : productId;
 }
@@ -110,6 +118,8 @@ const METHOD_ICON: Record<string, React.ReactNode> = {
   qris: <QrCode aria-hidden="true" />,
   debit_card: <CreditCard aria-hidden="true" />,
   credit_card: <Wallet aria-hidden="true" />,
+  ewallet: <Wallet aria-hidden="true" />,
+  transfer: <Banknote aria-hidden="true" />,
 };
 
 const ORDER_TYPES: { value: OrderType; label: string }[] = [
@@ -128,6 +138,12 @@ const EMPTY_FULFILMENT: OrderFulfilment = {
 
 function cartStorageKey(outletId: string | null) {
   return `velora_pos_cart_${outletId ?? "default"}`;
+}
+
+function splitLineId() {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `split-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function readCart(outletId: string | null): CartLine[] {
@@ -172,6 +188,9 @@ export default function SalesPage() {
   const [customer, setCustomer] = React.useState<Customer | null>(null);
   const [customerOpen, setCustomerOpen] = React.useState(false);
   const [paymentMethod, setPaymentMethod] = React.useState("cash");
+  const [payReference, setPayReference] = React.useState("");
+  const [splitOpen, setSplitOpen] = React.useState(false);
+  const [splitLines, setSplitLines] = React.useState<SplitLine[]>([]);
   const [success, setSuccess] = React.useState<Transaction | null>(null);
   const [clearOpen, setClearOpen] = React.useState(false);
   const [actionError, setActionError] = React.useState<string | null>(null);
@@ -247,7 +266,7 @@ export default function SalesPage() {
 
   const methodsQuery = useQuery({
     queryKey: ["payment-methods"],
-    queryFn: listPaymentMethods,
+    queryFn: () => listPaymentMethods(),
     enabled: has("sales.create"),
     staleTime: 5 * 60_000,
   });
@@ -378,9 +397,25 @@ export default function SalesPage() {
 
   React.useEffect(() => {
     if (!paymentMethod && methodsQuery.data?.length) {
-      setPaymentMethod(methodsQuery.data[0].type);
+      setPaymentMethod(methodsQuery.data[0].code);
     }
   }, [methodsQuery.data, paymentMethod]);
+
+  // Keep the split lines usable when a method is deactivated mid-shift.
+  React.useEffect(() => {
+    if (!splitLines.length || !methodsQuery.data?.length) return;
+    const active = methodsQuery.data.filter((method) => method.active);
+    if (!active.length) return;
+    setSplitLines((lines) => {
+      let changed = false;
+      const next = lines.map((line) => {
+        if (active.some((method) => method.code === line.method)) return line;
+        changed = true;
+        return { ...line, method: active[0].code };
+      });
+      return changed ? next : lines;
+    });
+  }, [methodsQuery.data, splitLines.length]);
 
   const taxRate: TaxRate | null = React.useMemo(
     () => taxQuery.data?.find((rate) => rate.isDefault && rate.isActive) ?? null,
@@ -412,7 +447,20 @@ export default function SalesPage() {
   }, [subtotal, taxRate]);
   const total = taxRate?.type === "exclusive" ? subtotal + tax : subtotal;
   const itemCount = cart.reduce((sum, line) => sum + line.quantity, 0);
-  const selectedMethod = methodsQuery.data?.find((method) => method.type === paymentMethod);
+  const methods = methodsQuery.data ?? [];
+  const selectedMethod = methods.find((method) => method.code === paymentMethod);
+  const usingSplit = splitOpen && splitLines.length > 0;
+  const splitTendered = splitLines.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
+  const splitCash = splitLines.reduce((sum, line) => {
+    const method = methods.find((entry) => entry.code === line.method);
+    const amount = Number(line.amount) || 0;
+    return (method?.type === "cash" || line.method === "cash") && amount > 0 ? sum + amount : sum;
+  }, 0);
+  const tendered = usingSplit ? splitTendered : total;
+  const remaining = Math.max(0, total - tendered);
+  const change = Math.max(0, tendered - total);
+  const changeInvalid = change > 0.005 && change > splitCash + 0.005;
+  const shortPaid = usingSplit && remaining > 0.005;
 
   const tableOptions = (tablesQuery.data?.tables ?? []).filter(
     (table) =>
@@ -463,6 +511,32 @@ export default function SalesPage() {
     setTableId("");
     checkoutKeyRef.current = null;
     saveKeyRef.current = null;
+    resetPayment();
+  };
+
+  const posPayments = () => {
+    if (usingSplit) {
+      return splitLines
+        .map((line) => ({
+          method: line.method,
+          amount: Number(line.amount) || 0,
+          reference: line.reference.trim() || undefined,
+        }))
+        .filter((line) => line.amount > 0);
+    }
+    return [
+      {
+        method: paymentMethod,
+        amount: total,
+        reference: payReference.trim() || undefined,
+      },
+    ];
+  };
+
+  const resetPayment = () => {
+    setSplitOpen(false);
+    setSplitLines([]);
+    setPayReference("");
   };
 
   const mutation = useMutation({
@@ -471,6 +545,15 @@ export default function SalesPage() {
       if (!cart.length) throw new Error("Add at least one item to the order");
       if (!paymentMethod) throw new Error("Choose a payment method");
       if (deliveryInvalid) throw new Error("Delivery orders need a contact phone and address");
+      if (usingSplit) {
+        if (!splitLines.length) throw new Error("Add at least one payment line");
+        if (remaining > 0.005) {
+          throw new Error(`Payments are ${formatCurrency(remaining, currency)} short of the total`);
+        }
+        if (changeInvalid) throw new Error("Change can only come back from a cash payment");
+      }
+
+      const payments = posPayments();
 
       if (resumedOrder) {
         const updated = await updateOrder(resumedOrder.id, {
@@ -480,7 +563,7 @@ export default function SalesPage() {
           customerId: customer?.id ?? null,
           items: orderItems(),
         });
-        return checkoutOrder(updated.id, { paymentMethod });
+        return checkoutOrder(updated.id, { paymentMethod, payments });
       }
 
       if (!checkoutKeyRef.current) {
@@ -496,6 +579,7 @@ export default function SalesPage() {
         items: orderItems(),
         idempotencyKey: checkoutKeyRef.current,
         paymentMethod,
+        payments,
         orderType,
         tableId: orderType === "dine_in" && tableId ? tableId : undefined,
         fulfilment: cleanFulfilment(),
@@ -514,6 +598,7 @@ export default function SalesPage() {
       checkoutKeyRef.current = null;
       saveKeyRef.current = null;
       setActionError(null);
+      resetPayment();
       if (pending) {
         push({
           title: "Sale recorded - payment not recorded",
@@ -1181,31 +1266,184 @@ export default function SalesPage() {
           </div>
 
           <div className="cart__pay">
-            <div className="eyebrow" style={{ marginBottom: 0 }}>
-              Payment method
+            <div className="row between">
+              <div className="eyebrow" style={{ marginBottom: 0 }}>
+                Payment method
+              </div>
+              <button
+                type="button"
+                className="btn btn--link"
+                style={{ fontSize: 11 }}
+                onClick={() => {
+                  setActionError(null);
+                  setSplitOpen((open) => {
+                    if (open) return false;
+                    setSplitLines((lines) =>
+                      lines.length
+                        ? lines
+                        : [{ id: splitLineId(), method: paymentMethod, amount: String(total), reference: "" }]
+                    );
+                    return true;
+                  });
+                }}
+              >
+                {splitOpen ? "Use one method" : "Split payment"}
+              </button>
             </div>
-            <div className="pay-options" role="radiogroup" aria-label="Payment method">
-              {(methodsQuery.data ?? []).map((method) => (
-                <button
-                  key={method.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={paymentMethod === method.type}
-                  className="pay-option"
-                  onClick={() => setPaymentMethod(method.type)}
-                  disabled={!method.active}
-                >
-                  {METHOD_ICON[method.type] ?? <CreditCard aria-hidden="true" />}
-                  <span>{method.name}</span>
-                  {paymentMethod === method.type ? <Check aria-hidden="true" className="pay-option__check" /> : null}
-                </button>
-              ))}
-              {methodsQuery.isLoading ? (
-                <div className="hint">
-                  <Spinner size={12} /> Loading methods…
+
+            {!splitOpen ? (
+              <>
+                <div className="pay-options" role="radiogroup" aria-label="Payment method">
+                  {methods.map((method) => (
+                    <button
+                      key={method.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={paymentMethod === method.code}
+                      className="pay-option"
+                      onClick={() => setPaymentMethod(method.code)}
+                      disabled={!method.active}
+                    >
+                      {METHOD_ICON[method.type] ?? <CreditCard aria-hidden="true" />}
+                      <span>{method.name}</span>
+                      {paymentMethod === method.code ? <Check aria-hidden="true" className="pay-option__check" /> : null}
+                    </button>
+                  ))}
+                  {methodsQuery.isLoading ? (
+                    <div className="hint">
+                      <Spinner size={12} /> Loading methods…
+                    </div>
+                  ) : null}
                 </div>
-              ) : null}
-            </div>
+                {selectedMethod?.requiresReference ? (
+                  <Field label={`${selectedMethod.name} reference`} htmlFor="pay-reference">
+                    <Input
+                      id="pay-reference"
+                      value={payReference}
+                      onChange={(event) => setPayReference(event.target.value)}
+                      placeholder="Approval or transaction code"
+                      autoComplete="off"
+                    />
+                  </Field>
+                ) : null}
+              </>
+            ) : (
+              <div className="stack" style={{ gap: 8 }}>
+                {splitLines.map((line, index) => {
+                  const method = methods.find((entry) => entry.code === line.method);
+                  return (
+                    <div
+                      key={line.id}
+                      className="stack"
+                      style={{
+                        gap: 6,
+                        padding: 8,
+                        border: "1px solid hsl(var(--border))",
+                        borderRadius: 10,
+                      }}
+                    >
+                      <div className="row" style={{ gap: 6 }}>
+                        <Select
+                          aria-label={`Payment method ${index + 1}`}
+                          value={line.method}
+                          style={{ flex: 1, minHeight: 36 }}
+                          onChange={(event) =>
+                            setSplitLines((lines) =>
+                              lines.map((entry) =>
+                                entry.id === line.id ? { ...entry, method: event.target.value } : entry
+                              )
+                            )
+                          }
+                        >
+                          {methods
+                            .filter((entry) => entry.active || entry.code === line.method)
+                            .map((entry) => (
+                              <option key={entry.id} value={entry.code}>
+                                {entry.name}
+                              </option>
+                            ))}
+                        </Select>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          aria-label={`Remove payment line ${index + 1}`}
+                          onClick={() => setSplitLines((lines) => lines.filter((entry) => entry.id !== line.id))}
+                        >
+                          <X aria-hidden="true" />
+                        </Button>
+                      </div>
+                      <Input
+                        aria-label={`Amount ${index + 1}`}
+                        inputMode="decimal"
+                        value={line.amount}
+                        placeholder="Amount"
+                        onChange={(event) =>
+                          setSplitLines((lines) =>
+                            lines.map((entry) =>
+                              entry.id === line.id ? { ...entry, amount: event.target.value } : entry
+                            )
+                          )
+                        }
+                      />
+                      {method?.requiresReference ? (
+                        <Input
+                          aria-label={`Reference ${index + 1}`}
+                          value={line.reference}
+                          placeholder="Reference (optional)"
+                          autoComplete="off"
+                          onChange={(event) =>
+                            setSplitLines((lines) =>
+                              lines.map((entry) =>
+                                entry.id === line.id ? { ...entry, reference: event.target.value } : entry
+                              )
+                            )
+                          }
+                        />
+                      ) : null}
+                    </div>
+                  );
+                })}
+                <Button
+                  variant="secondary"
+                  block
+                  onClick={() =>
+                    setSplitLines((lines) => [
+                      ...lines,
+                      {
+                        id: splitLineId(),
+                        method: lines.at(-1)?.method ?? paymentMethod,
+                        amount: "",
+                        reference: "",
+                      },
+                    ])
+                  }
+                >
+                  <Plus aria-hidden="true" /> Add payment line
+                </Button>
+                <div className="cart__summary" style={{ margin: 0 }}>
+                  <div className="cart__row">
+                    <span>Paid</span>
+                    <b>{formatCurrency(tendered, currency)}</b>
+                  </div>
+                  {shortPaid ? (
+                    <div className="cart__row">
+                      <span>Remaining</span>
+                      <b>{formatCurrency(remaining, currency)}</b>
+                    </div>
+                  ) : null}
+                  {change > 0.005 ? (
+                    <div className="cart__row">
+                      <span>Change</span>
+                      <b>{formatCurrency(change, currency)}</b>
+                    </div>
+                  ) : null}
+                </div>
+                {changeInvalid ? (
+                  <div className="alert alert--warning">Change can only come back from a cash payment.</div>
+                ) : null}
+              </div>
+            )}
+
             <Button
               variant="primary"
               size="lg"
@@ -1214,7 +1452,10 @@ export default function SalesPage() {
               disabled={
                 !cart.length ||
                 !outletId ||
-                !selectedMethod ||
+                (!splitOpen && !selectedMethod) ||
+                (splitOpen && !splitLines.length) ||
+                shortPaid ||
+                changeInvalid ||
                 deliveryInvalid ||
                 Boolean(taxQuery.isLoading)
               }
@@ -1243,7 +1484,9 @@ export default function SalesPage() {
               {deliveryInvalid
                 ? "Add a delivery phone and address before saving or charging."
                 : `${itemCount} ${itemCount === 1 ? "item" : "items"} · ${
-                    methodsQuery.data?.find((method) => method.type === paymentMethod)?.name ?? "Choose a method"
+                    splitOpen
+                      ? `${splitLines.length} payment ${splitLines.length === 1 ? "line" : "lines"}`
+                      : methods.find((method) => method.code === paymentMethod)?.name ?? "Choose a method"
                   }`}
             </p>
           </div>

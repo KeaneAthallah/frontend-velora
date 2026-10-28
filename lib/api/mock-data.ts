@@ -267,10 +267,12 @@ export const mockIngredientMovements: IngredientMovement[] = [
 ];
 
 export const mockPaymentMethods: PaymentMethod[] = [
-  { id: "pm1", name: "Cash", type: "cash", active: true },
-  { id: "pm2", name: "QRIS", type: "qris", active: true },
-  { id: "pm3", name: "Debit Card", type: "debit_card", active: true },
-  { id: "pm4", name: "Credit Card", type: "credit_card", active: true },
+  { id: "pm1", code: "cash", name: "Cash", type: "cash", requiresReference: false, active: true, sortOrder: 1 },
+  { id: "pm2", code: "qris", name: "QRIS", type: "qris", requiresReference: false, active: true, sortOrder: 2 },
+  { id: "pm3", code: "debit_card", name: "Debit Card", type: "debit_card", requiresReference: true, active: true, sortOrder: 3 },
+  { id: "pm4", code: "credit_card", name: "Credit Card", type: "credit_card", requiresReference: true, active: true, sortOrder: 4 },
+  { id: "pm5", code: "ewallet", name: "E-Wallet", type: "ewallet", requiresReference: true, active: true, sortOrder: 5 },
+  { id: "pm6", code: "transfer", name: "Bank Transfer", type: "transfer", requiresReference: true, active: true, sortOrder: 6 },
 ];
 
 export const mockTaxRates: TaxRate[] = [
