@@ -8,6 +8,7 @@
 - Sales/Transactions: list, get, checkout (idempotency key supported, modifier options priced server-side)
 - Orders: list (active/all, by type and search), create open tab, edit items, kitchen status (fire/ready/served), checkout with payment, cancel; POS order types, delivery details, save-as-open-order and resume via `/sales?order=ID`
 - Floor plan: list areas + tables with live occupancy, table/area CRUD, manual available/reserved/cleaning status, dine-in table assignment on orders and immediate sales, `/sales?table=ID&type=dine_in` deep link
+- Kitchen display: list stations with category routing and printer settings, station CRUD, ticket board by station/status with counts, forward-only ticket status (queued -> preparing -> ready -> served), ticket print payload + printed tracking; tickets are created when an order is fired, follow order board changes, and void on cancel
 - Inventory: stockByOutlet, adjustStock, listMovements
 - Ingredients: list (with per-outlet quantity/value), create (+opening stock), update, delete/deactivate, stock adjust, balanced ledger
 - Recipes: list (with recipe cost + per-variant cost), get, replace product-level or variant-level BOM; mock checkout consumes ingredients and void restores them
@@ -42,3 +43,4 @@
 - Delivery orders require a contact phone and address in both the register and the order board; the API rejects them with `422 ORDER_ERROR` otherwise.
 - The floor plan (`/tables`) polls every 15 seconds. Table/area edits need `tables.manage`; the POS table picker only appears for dine-in orders and needs `tables.view`. Occupancy is derived from active orders, so checking out or cancelling frees the table with no extra step.
 - One table can hold one open order. Assigning a busy table returns `422 TABLE_ERROR` in the API (the mock mirrors it), and switching an order away from dine-in clears its table. Tables with sales history cannot be deleted — deactivate them instead.
+- The kitchen display (`/kitchen`) polls every 5 seconds and needs `kitchen.view`; station edits need `kitchen.manage` and printing needs `kitchen.print`. Tickets are split by product category, falling back to the outlet's default station, and an outlet with no stations fires orders without tickets. Bumping every ticket to ready moves the order to ready; serving them all moves it to served. Cancelling an order voids its tickets, and checkout marks them served. Deleting a station with ticket history is blocked - deactivate it instead.

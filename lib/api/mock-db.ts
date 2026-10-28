@@ -9,6 +9,7 @@ import {
   mockIngredientBalances,
   mockIngredientMovements,
   mockIngredients,
+  mockKitchenStations,
   mockMenuAvailability,
   mockModifierAssignments,
   mockModifierCategoryAssignments,
@@ -37,6 +38,8 @@ import type {
   Ingredient,
   IngredientMovement,
   InventoryMovement,
+  KitchenStation,
+  KitchenTicket,
   ModifierGroup,
   OrderType,
   Outlet,
@@ -94,6 +97,10 @@ export const mockDb: {
   ingredientMovements: IngredientMovement[];
   floorAreas: FloorArea[];
   diningTables: DiningTable[];
+  kitchenStations: KitchenStation[];
+  kitchenTickets: KitchenTicket[];
+  kitchenTicketSeedDone: boolean;
+  kitchenTicketCounter: number;
 } = {
   business: { ...mockBusiness },
   outlets: mockOutlets.map((outlet) => ({ ...outlet })),
@@ -138,6 +145,13 @@ export const mockDb: {
   ingredientMovements: mockIngredientMovements.map((movement) => ({ ...movement })),
   floorAreas: mockFloorAreas.map((area) => ({ ...area })),
   diningTables: mockDiningTables.map((table) => ({ ...table, area: table.area ? { ...table.area } : null })),
+  kitchenStations: mockKitchenStations.map((station) => ({
+    ...station,
+    categories: station.categories.map((category) => ({ ...category })),
+  })),
+  kitchenTickets: [],
+  kitchenTicketSeedDone: false,
+  kitchenTicketCounter: 0,
 };
 
 // Development-only fixture used by the mock data toggle. `data=worst` swaps

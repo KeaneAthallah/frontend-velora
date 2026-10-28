@@ -4,6 +4,7 @@ import {
   Boxes,
   ChefHat,
   ClipboardList,
+  Flame,
   LayoutDashboard,
   LayoutGrid,
   Package,
@@ -54,6 +55,13 @@ export const navGroups: NavGroup[] = [
         icon: ClipboardList,
         permission: "orders.view",
         description: "Open tabs and the kitchen queue",
+      },
+      {
+        label: "Kitchen",
+        href: "/kitchen",
+        icon: Flame,
+        permission: "kitchen.view",
+        description: "Station tickets and printing",
       },
       {
         label: "Floor plan",
@@ -213,6 +221,7 @@ export function defaultRoute(has: (permission: string) => boolean) {
   if (has("reports.view")) return "/";
   if (has("sales.create")) return "/sales";
   if (has("orders.view")) return "/orders";
+  if (has("kitchen.view")) return "/kitchen";
   if (has("tables.view")) return "/tables";
   if (has("sales.view")) return "/transactions";
   if (has("products.view")) return "/products";

@@ -10,6 +10,7 @@ import {
   mockProduct,
 } from "./mock-db";
 import { mapSale } from "./sales";
+import { mockFireOrder, mockSyncTicketsFromOrder, mockVoidTicketsForOrder } from "./kitchen";
 import { mockActiveOrderForTable } from "./tables";
 import type {
   CreateOrderRequest,
@@ -337,9 +338,18 @@ export async function setOrderStatus(id: string, status: OrderStatus): Promise<T
     }
     const now = new Date().toISOString();
     order.orderStatus = status;
-    if (status === "in_kitchen") order.firedAt = order.firedAt ?? now;
-    if (status === "ready") order.readyAt = now;
-    if (status === "served") order.servedAt = now;
+    if (status === "in_kitchen") {
+      order.firedAt = order.firedAt ?? now;
+      mockFireOrder(order);
+    }
+    if (status === "ready") {
+      order.readyAt = now;
+      mockSyncTicketsFromOrder(order, "ready");
+    }
+    if (status === "served") {
+      order.servedAt = now;
+      mockSyncTicketsFromOrder(order, "served");
+    }
     return order;
   }
 
@@ -386,6 +396,8 @@ export async function checkoutOrder(
         receiptNumber
       );
     });
+
+    mockSyncTicketsFromOrder(order, "served");
 
     order.receiptNumber = receiptNumber;
     order.orderStatus = "completed";
@@ -436,6 +448,7 @@ export async function cancelOrder(id: string, reason: string): Promise<Transacti
     const order = mockFindOrder(id);
     if (!order) throw new Error("Order not found");
     if (!ACTIVE_STATUSES.includes(order.orderStatus!)) throw new Error("Only open orders can be cancelled");
+    mockVoidTicketsForOrder(order.id);
     order.orderStatus = "cancelled";
     order.status = "voided";
     order.notes = order.notes ? `${order.notes} · Cancelled: ${reason}` : `Cancelled: ${reason}`;

@@ -259,6 +259,73 @@ export type FloorPlan = {
   tables: DiningTable[];
 };
 
+export type KitchenStationKind = "kitchen" | "bar" | "pastry" | "cold" | "expediter";
+
+export type KitchenStation = {
+  id: string;
+  outletId: string;
+  name: string;
+  code: string;
+  kind: KitchenStationKind;
+  printerName?: string;
+  printerTarget?: string;
+  copies: number;
+  autoPrint: boolean;
+  isDefault: boolean;
+  isActive: boolean;
+  sortOrder: number;
+  categories: { id: string; name: string }[];
+};
+
+export type KitchenTicketStatus = "queued" | "preparing" | "ready" | "served" | "voided";
+
+export type KitchenTicketItem = {
+  saleItemId?: string;
+  productId?: string;
+  name: string;
+  quantity: string;
+  notes?: string;
+  modifiers: string[];
+};
+
+export type KitchenTicket = {
+  id: string;
+  ticketNumber: string;
+  status: KitchenTicketStatus;
+  note?: string;
+  items: KitchenTicketItem[];
+  printedAt?: string;
+  printCount: number;
+  startedAt?: string;
+  readyAt?: string;
+  servedAt?: string;
+  createdAt: string;
+  text?: string;
+  station: {
+    id: string;
+    name: string;
+    code: string;
+    kind: KitchenStationKind;
+    printerName?: string;
+    printerTarget?: string;
+    copies: number;
+    autoPrint: boolean;
+  };
+  sale: {
+    id: string;
+    orderNumber?: string;
+    orderType?: OrderType;
+    orderStatus?: OrderStatus;
+    table?: string;
+    notes?: string;
+  };
+};
+
+export type KitchenBoard = {
+  tickets: KitchenTicket[];
+  counts: Record<KitchenTicketStatus, number>;
+};
+
 export type Transaction = {
   id: string;
   receiptNumber: string;
