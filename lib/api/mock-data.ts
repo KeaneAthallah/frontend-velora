@@ -2,6 +2,7 @@ import { format } from "date-fns";
 import type {
   Business,
   Category,
+  ChannelMapping,
   Customer,
   Daypart,
   DiningTable,
@@ -19,6 +20,7 @@ import type {
   Promotion,
   PurchaseOrder,
   Role,
+  SalesChannel,
   Session,
   Supplier,
   TaxRate,
@@ -837,6 +839,115 @@ export const mockMovements: InventoryMovement[] = [
     }))
   ),
 ];
+
+/* ---------------------------------------------------------------- */
+/* Online & delivery channels                                        */
+/* ---------------------------------------------------------------- */
+
+export const mockChannels: SalesChannel[] = [
+  {
+    id: "ch-gofood",
+    name: "GoFood",
+    code: "gofood",
+    kind: "marketplace",
+    outletId: "o1",
+    commissionPercent: 20,
+    paymentMethodCode: "qris",
+    autoAccept: true,
+    prepBufferMinutes: 10,
+    active: true,
+    webhookUrl: "https://api.velora.test/api/v1/channel-webhooks/demo-gofood",
+    webhookToken: "demo-gofood-token",
+    hasCredentials: true,
+    mappingsCount: 3,
+  },
+  {
+    id: "ch-web",
+    name: "Website pre-order",
+    code: "web",
+    kind: "own_web",
+    commissionPercent: 0,
+    paymentMethodCode: "qris",
+    autoAccept: false,
+    prepBufferMinutes: 5,
+    active: true,
+    webhookUrl: "https://api.velora.test/api/v1/channel-webhooks/demo-web",
+    webhookToken: "demo-web-token",
+    hasCredentials: true,
+    mappingsCount: 2,
+  },
+  {
+    id: "ch-whatsapp",
+    name: "WhatsApp orders",
+    code: "whatsapp",
+    kind: "whatsapp",
+    commissionPercent: 0,
+    autoAccept: false,
+    prepBufferMinutes: 0,
+    active: false,
+    hasCredentials: false,
+    mappingsCount: 0,
+  },
+];
+
+export const mockChannelMappings: ChannelMapping[] = [
+  { id: "cm-1", externalItemId: "GF-ESP", productId: "p1", productName: "Espresso", optionMap: {}, active: true },
+  { id: "cm-2", externalItemId: "GF-CAP", productId: "p2", productName: "Cappuccino", optionMap: {}, active: true },
+  { id: "cm-3", externalItemId: "GF-DANISH", productId: "p12", productName: "Almond Danish", optionMap: {}, active: true },
+  { id: "cm-4", externalItemId: "WEB-CAP", productId: "p2", productName: "Cappuccino", optionMap: {}, active: true },
+  { id: "cm-5", externalItemId: "WEB-CROISSANT", productId: "p10", productName: "Butter Croissant", optionMap: {}, active: true },
+];
+
+/* Part of the demo ledger and two open orders arrived through a channel, so the
+   channel dashboard and the order board have something real to show. */
+mockTransactions.forEach((transaction, index) => {
+  const channel = index % 11 === 3 ? mockChannels[0] : index % 17 === 9 ? mockChannels[1] : null;
+  if (!channel) return;
+
+  transaction.channelId = channel.id;
+  transaction.channelName = channel.name;
+  transaction.channelOrderRef = `${channel.code.toUpperCase()}-${String(7000 + index)}`;
+  transaction.channelStatus = "completed";
+  transaction.channelCommissionPercent = channel.commissionPercent;
+  transaction.channelCommission =
+    Math.round(((transaction.total * channel.commissionPercent) / 100) * 100) / 100;
+});
+
+let channelSeedCount = 0;
+mockOpenOrders.forEach((order, index) => {
+  if (channelSeedCount >= 2) return;
+  if (order.orderType !== "delivery" && order.orderType !== "pickup") return;
+
+  const channel = channelSeedCount === 0 ? mockChannels[0] : mockChannels[1];
+  order.channelId = channel.id;
+  order.channelName = channel.name;
+  order.channelOrderRef = `${channel.code.toUpperCase()}-${String(8100 + index)}`;
+  order.channelStatus = channel.autoAccept ? "accepted" : "received";
+  order.channelCommissionPercent = channel.commissionPercent;
+  order.channelCommission = Math.round(((order.total * channel.commissionPercent) / 100) * 100) / 100;
+  channelSeedCount += 1;
+});
+
+/* One web pre-order still waiting to be accepted, so the demo can walk the
+   accept-then-fire path end to end. */
+const webPreorder = makeOpenOrder({
+  id: "o-web-1",
+  sequence: 902,
+  outletIndex: 0,
+  type: "pickup",
+  status: "open",
+  minutesAgo: 2,
+  lines: [["p2", 1]],
+  notes: "Scheduled for 09:30 pickup",
+  customerIndex: 0,
+});
+webPreorder.channelId = "ch-web";
+webPreorder.channelName = "Website pre-order";
+webPreorder.channelOrderRef = "WEB-8201";
+webPreorder.channelStatus = "received";
+webPreorder.channelCommissionPercent = 0;
+webPreorder.channelCommission = 0;
+mockOpenOrders.push(webPreorder);
 
 export const mockSession: Session = {
   user: mockUser,

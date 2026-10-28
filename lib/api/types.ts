@@ -412,6 +412,12 @@ export type Transaction = {
   loyaltyDiscount?: number;
   loyaltyPointsRedeemed?: number;
   loyaltyPointsEarned?: number;
+  channelId?: string;
+  channelName?: string;
+  channelOrderRef?: string;
+  channelStatus?: ChannelOrderStatus;
+  channelCommission?: number;
+  channelCommissionPercent?: number;
 };
 
 export type PaymentMethod = {
@@ -643,6 +649,112 @@ export type Paginated<T> = {
   pageSize: number;
   total: number;
   totalPages: number;
+};
+
+export type ChannelKind = "own_web" | "marketplace" | "whatsapp" | "phone" | "custom";
+
+export type ChannelOrderStatus =
+  | "received"
+  | "accepted"
+  | "ready"
+  | "dispatched"
+  | "completed"
+  | "rejected"
+  | "cancelled";
+
+export type SalesChannel = {
+  id: string;
+  name: string;
+  code: string;
+  kind: ChannelKind;
+  outletId?: string;
+  commissionPercent: number;
+  paymentMethodCode?: string;
+  autoAccept: boolean;
+  prepBufferMinutes: number;
+  active: boolean;
+  webhookUrl?: string;
+  webhookToken?: string;
+  hasCredentials: boolean;
+  mappingsCount?: number;
+  salesCount?: number;
+  lastOrderAt?: string;
+  settings?: Record<string, unknown>;
+};
+
+export type SalesChannelInput = {
+  name: string;
+  code?: string;
+  kind: ChannelKind;
+  outletId?: string | null;
+  commissionPercent: number;
+  paymentMethodCode?: string | null;
+  autoAccept: boolean;
+  prepBufferMinutes: number;
+  active: boolean;
+};
+
+export type ChannelCredentials = { webhookUrl?: string; secret: string };
+
+export type ChannelMapping = {
+  id: string;
+  externalItemId: string;
+  externalVariantId?: string;
+  productId: string;
+  productVariantId?: string;
+  productName?: string;
+  variantName?: string;
+  optionMap: Record<string, string>;
+  active: boolean;
+};
+
+export type ChannelEventType =
+  | "order.accepted"
+  | "order.rejected"
+  | "order.ready"
+  | "order.dispatched"
+  | "order.completed"
+  | "order.cancelled"
+  | "menu.pushed";
+
+export type ChannelEvent = {
+  id: string;
+  type: ChannelEventType;
+  status: "pending" | "sent" | "failed";
+  saleId?: string;
+  attempts: number;
+  lastError?: string;
+  sentAt?: string;
+  createdAt: string;
+  payload?: Record<string, unknown>;
+};
+
+export type ChannelSummaryRow = {
+  channelId: string;
+  code: string;
+  name: string;
+  kind: ChannelKind;
+  active: boolean;
+  commissionPercent: number;
+  orders: number;
+  openOrders: number;
+  gross: number;
+  commission: number;
+  net: number;
+};
+
+export type ChannelMenuSnapshot = {
+  generatedAt: string;
+  items: {
+    externalItemId: string;
+    externalVariantId?: string;
+    productId: string;
+    name: string;
+    price: number;
+    available: boolean;
+    availabilityReason?: string;
+    options: { externalOptionId: string; name: string; priceDelta: number; available: boolean }[];
+  }[];
 };
 
 export type Permission = string;

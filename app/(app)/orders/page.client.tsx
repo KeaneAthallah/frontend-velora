@@ -34,6 +34,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { AccessDenied } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
 import { listPaymentMethods } from "@/lib/api/payments";
+import { acceptChannelOrder } from "@/lib/api/channels";
 import {
   cancelOrder,
   checkoutOrder,
@@ -156,6 +157,25 @@ export default function OrdersPage() {
     },
   });
 
+  const acceptChannelMutation = useMutation({
+    mutationFn: (order: Transaction) => acceptChannelOrder(order.channelId!, order.id),
+    onSuccess: (order) => {
+      push({
+        title: `${order.orderNumber ?? "Order"} accepted`,
+        description: `${order.channelName ?? "Channel"} order fired to the kitchen.`,
+        variant: "success",
+      });
+      invalidate();
+    },
+    onError: (error) => {
+      push({
+        title: "The channel order was not accepted",
+        description: error instanceof Error ? error.message : "Try again.",
+        variant: "error",
+      });
+    },
+  });
+
   const checkoutMutation = useMutation({
     mutationFn: () =>
       checkoutOrder(checkoutTarget!.id, {
@@ -247,6 +267,14 @@ export default function OrdersPage() {
                   <span className="tag">{order.tableName}</span>
                 </>
               ) : null}
+              {order.channelName ? (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <Badge tone={order.channelStatus === "received" ? "warning" : "info"}>
+                    {order.channelName}
+                  </Badge>
+                </>
+              ) : null}
               <span aria-hidden="true">·</span>
               <span>{formatTime(order.createdAt)}</span>
             </div>
@@ -300,6 +328,16 @@ export default function OrdersPage() {
 
         {canManage || canCancel ? (
           <div className="order-card__actions">
+            {canManage && order.channelId && order.channelStatus === "received" ? (
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => acceptChannelMutation.mutate(order)}
+                disabled={acceptChannelMutation.isPending}
+              >
+                Accept
+              </Button>
+            ) : null}
             {canManage && order.orderStatus === "open" ? (
               <Button
                 size="sm"
@@ -497,6 +535,12 @@ export default function OrdersPage() {
                               <>
                                 <span aria-hidden="true">·</span>
                                 <span className="tag">{order.tableName}</span>
+                              </>
+                            ) : null}
+                            {order.channelName ? (
+                              <>
+                                <span aria-hidden="true">·</span>
+                                <Badge tone="info">{order.channelName}</Badge>
                               </>
                             ) : null}
                             <span aria-hidden="true">·</span>

@@ -86,6 +86,12 @@ export function mapSale(sale: any): Transaction {
     loyaltyDiscount: Number(sale.loyalty_discount ?? 0),
     loyaltyPointsRedeemed: Number(sale.loyalty_points_redeemed ?? 0),
     loyaltyPointsEarned: Number(sale.loyalty_points_earned ?? 0),
+    channelId: sale.sales_channel_id ? String(sale.sales_channel_id) : undefined,
+    channelName: sale.sales_channel?.name ?? sale.channel_name ?? undefined,
+    channelOrderRef: sale.channel_order_ref ?? undefined,
+    channelStatus: sale.channel_status ?? undefined,
+    channelCommission: Number(sale.channel_commission ?? 0),
+    channelCommissionPercent: Number(sale.channel_commission_percent ?? 0),
   };
 }
 

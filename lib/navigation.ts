@@ -72,6 +72,13 @@ export const navGroups: NavGroup[] = [
         description: "Dine-in tables and live occupancy",
       },
       {
+        label: "Channels",
+        href: "/channels",
+        icon: Truck,
+        permission: "channels.view",
+        description: "Marketplace and online orders",
+      },
+      {
         label: "Transactions",
         href: "/transactions",
         icon: Receipt,

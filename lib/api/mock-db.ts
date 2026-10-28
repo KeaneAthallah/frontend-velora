@@ -1,6 +1,8 @@
 import {
   mockBusiness,
   mockCategories,
+  mockChannelMappings,
+  mockChannels,
   mockCustomers,
   mockDayparts,
   mockDiningTables,
@@ -32,6 +34,8 @@ import {
 import type {
   Business,
   Category,
+  ChannelEvent,
+  ChannelMapping,
   Customer,
   Daypart,
   DiningTable,
@@ -53,6 +57,7 @@ import type {
   PurchaseOrder,
   Refund,
   Role,
+  SalesChannel,
   Supplier,
   TaxRate,
   Transaction,
@@ -112,6 +117,10 @@ export const mockDb: {
   kitchenTickets: KitchenTicket[];
   kitchenTicketSeedDone: boolean;
   kitchenTicketCounter: number;
+  channels: SalesChannel[];
+  channelMappings: ChannelMapping[];
+  channelMappingOwners: Record<string, string>;
+  channelEvents: ChannelEvent[];
 } = {
   business: { ...mockBusiness },
   outlets: mockOutlets.map((outlet) => ({ ...outlet })),
@@ -168,6 +177,20 @@ export const mockDb: {
   kitchenTickets: [],
   kitchenTicketSeedDone: false,
   kitchenTicketCounter: 0,
+  channels: mockChannels.map((channel) => ({ ...channel })),
+  channelMappings: mockChannelMappings.map((mapping) => ({
+    ...mapping,
+    optionMap: { ...mapping.optionMap },
+  })),
+  // Channel mapping rows carry no channel id in the API; the mock keeps the
+  // ownership alongside so saving one channel never touches another's menu.
+  channelMappingOwners: Object.fromEntries(
+    mockChannelMappings.map((mapping) => [
+      mapping.id,
+      mapping.externalItemId.startsWith("GF-") ? "ch-gofood" : "ch-web",
+    ])
+  ),
+  channelEvents: [],
 };
 
 // Development-only fixture used by the mock data toggle. `data=worst` swaps
