@@ -36,14 +36,14 @@ import {
 import { Dialog } from "@/components/ui/dialog";
 import { AccessDenied } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
-import { listProducts } from "@/lib/api/products";
-import { listCategories } from "@/lib/api/products";
+import { listCategories, listProducts } from "@/lib/api/products";
+import { getMenu } from "@/lib/api/menu";
 import { listPaymentMethods } from "@/lib/api/business";
 import { listTaxRates } from "@/lib/api/tax";
 import { checkout } from "@/lib/api/sales";
 import { listCustomers } from "@/lib/api/customers";
 import { stockByOutlet } from "@/lib/api/inventory";
-import type { Customer, Product, TaxRate, Transaction } from "@/lib/api/types";
+import type { Customer, ModifierGroup, Product, TaxRate, Transaction } from "@/lib/api/types";
 import { formatCurrency, formatNumber } from "@/lib/formatting/currency";
 import { initials } from "@/components/ui/primitives";
 import { useBusiness } from "@/lib/business/context";
@@ -51,15 +51,48 @@ import { useAuth, usePermissions } from "@/lib/auth/auth-context";
 import { useDebouncedValue } from "@/lib/use-debounced";
 
 type CartLine = {
+  key: string;
   productId: string;
+  optionIds: string[];
+  optionSummary?: string;
   name: string;
   sku: string;
   unit: string;
+  basePrice: number;
   unitPrice: number;
   quantity: number;
   trackInventory: boolean;
   stock: number;
 };
+
+function lineKey(productId: string, optionIds: string[]) {
+  return optionIds.length ? `${productId}|${[...optionIds].sort().join(",")}` : productId;
+}
+
+function selectedDelta(groups: ModifierGroup[], optionIds: string[]) {
+  const selected = new Set(optionIds);
+  return groups
+    .flatMap((group) => group.options)
+    .filter((option) => selected.has(option.id))
+    .reduce((sum, option) => sum + option.priceDelta, 0);
+}
+
+function defaultSelection(groups: ModifierGroup[]): Record<string, string[]> {
+  const next: Record<string, string[]> = {};
+  for (const group of groups) {
+    if (group.selectionType === "single") {
+      const preferred =
+        group.options.find((option) => option.isDefault && option.available) ??
+        (group.isRequired ? group.options.find((option) => option.available) : undefined);
+      next[group.id] = preferred ? [preferred.id] : [];
+    } else {
+      next[group.id] = group.options
+        .filter((option) => option.isDefault && option.available)
+        .map((option) => option.id);
+    }
+  }
+  return next;
+}
 
 const METHOD_ICON: Record<string, React.ReactNode> = {
   cash: <Banknote aria-hidden="true" />,
@@ -82,10 +115,14 @@ function readCart(outletId: string | null): CartLine[] {
     return parsed
       .filter((line) => line && typeof line.productId === "string" && Number(line.quantity) > 0)
       .map((line) => ({
+        key: String(line.key ?? line.productId),
         productId: String(line.productId),
+        optionIds: Array.isArray(line.optionIds) ? line.optionIds.map(String) : [],
+        optionSummary: typeof line.optionSummary === "string" ? line.optionSummary : undefined,
         name: String(line.name ?? "Product"),
         sku: String(line.sku ?? ""),
         unit: String(line.unit ?? "pcs"),
+        basePrice: Number(line.basePrice ?? line.unitPrice ?? 0),
         unitPrice: Number(line.unitPrice ?? 0),
         quantity: Math.max(1, Number(line.quantity ?? 1)),
         trackInventory: line.trackInventory !== false,
@@ -113,6 +150,7 @@ export default function SalesPage() {
   const [success, setSuccess] = React.useState<Transaction | null>(null);
   const [clearOpen, setClearOpen] = React.useState(false);
   const [chargeError, setChargeError] = React.useState<string | null>(null);
+  const [picker, setPicker] = React.useState<{ product: Product; groups: ModifierGroup[] } | null>(null);
 
   const searchRef = React.useRef<HTMLInputElement>(null);
   const checkoutKeyRef = React.useRef<string | null>(null);
@@ -164,6 +202,13 @@ export default function SalesPage() {
     staleTime: 5 * 60_000,
   });
 
+  const menuQuery = useQuery({
+    queryKey: ["pos-menu", outletId],
+    queryFn: () => getMenu(outletId!),
+    enabled: has("sales.create") && has("menu.view") && Boolean(outletId),
+    staleTime: 30_000,
+  });
+
   const methodsQuery = useQuery({
     queryKey: ["payment-methods"],
     queryFn: listPaymentMethods,
@@ -185,6 +230,11 @@ export default function SalesPage() {
 
   const products = React.useMemo(() => productsQuery.data?.data ?? [], [productsQuery.data]);
 
+  const menuById = React.useMemo(
+    () => new Map((menuQuery.data?.products ?? []).map((product) => [product.id, product])),
+    [menuQuery.data]
+  );
+
   React.useEffect(() => {
     if (!productsQuery.data) return;
     const byId = new Map(products.map((product) => [product.id, product]));
@@ -194,9 +244,14 @@ export default function SalesPage() {
         const product = byId.get(line.productId);
         if (!product) return line;
         const stock = stockMap.has(product.id) ? (stockMap.get(product.id) as number) : line.stock;
+        const groups = menuById.get(product.id)?.modifierGroups ?? [];
+        const delta = groups.length ? selectedDelta(groups, line.optionIds) : null;
+        const basePrice = product.price;
+        const unitPrice =
+          delta !== null && line.optionIds.length ? basePrice + delta : line.optionIds.length ? line.unitPrice : basePrice;
         if (
           product.name === line.name &&
-          product.price === line.unitPrice &&
+          unitPrice === line.unitPrice &&
           product.sku === line.sku &&
           stock === line.stock
         ) {
@@ -208,14 +263,15 @@ export default function SalesPage() {
           name: product.name,
           sku: product.sku,
           unit: product.unit ?? line.unit,
-          unitPrice: product.price,
+          basePrice,
+          unitPrice,
           trackInventory: product.trackInventory !== false,
           stock,
         };
       });
       return changed ? next : current;
     });
-  }, [productsQuery.data, products, stockMap]);
+  }, [productsQuery.data, products, stockMap, menuById]);
 
   React.useEffect(() => {
     if (!paymentMethod && methodsQuery.data?.length) {
@@ -270,7 +326,12 @@ export default function SalesPage() {
         outletId,
         cashierId: session.user.id,
         customerId: customer?.id,
-        items: cart.map((line) => ({ productId: line.productId, quantity: line.quantity, discount: 0 })),
+        items: cart.map((line) => ({
+          productId: line.productId,
+          quantity: line.quantity,
+          discount: 0,
+          optionIds: line.optionIds,
+        })),
         idempotencyKey: checkoutKeyRef.current,
         paymentMethod,
       });
@@ -312,12 +373,23 @@ export default function SalesPage() {
     return <AccessDenied permission="sales.create" />;
   }
 
-  const addProduct = (product: Product) => {
+  const addProduct = (product: Product, optionIds: string[] = []) => {
     const stock = stockMap.has(product.id) ? (stockMap.get(product.id) as number) : 0;
     const tracked = product.trackInventory !== false;
+    const groups = menuById.get(product.id)?.modifierGroups ?? [];
+    const key = lineKey(product.id, optionIds);
+    const selected = new Set(optionIds);
+    const optionLabels = groups
+      .flatMap((group) => group.options)
+      .filter((option) => selected.has(option.id))
+      .map((option) => option.name);
+    const unitPrice = product.price + (optionIds.length ? selectedDelta(groups, optionIds) : 0);
+
     setCart((current) => {
-      const existing = current.find((line) => line.productId === product.id);
-      if (tracked && existing && existing.quantity >= stock) {
+      const productQty = current
+        .filter((line) => line.productId === product.id)
+        .reduce((sum, line) => sum + line.quantity, 0);
+      if (tracked && productQty >= stock) {
         push({
           title: "No more stock available",
           description: `${product.name} has ${formatNumber(stock)} ${product.unit ?? "units"} at ${outlet?.name ?? "this outlet"}.`,
@@ -325,23 +397,28 @@ export default function SalesPage() {
         });
         return current;
       }
-      if (!existing && tracked && stock <= 0) {
+      if (tracked && stock <= 0) {
         push({ title: "Out of stock", description: `${product.name} cannot be sold at this outlet.`, variant: "warning" });
         return current;
       }
+      const existing = current.find((line) => line.key === key);
       if (existing) {
         return current.map((line) =>
-          line.productId === product.id ? { ...line, quantity: line.quantity + 1 } : line
+          line.key === key ? { ...line, quantity: line.quantity + 1 } : line
         );
       }
       return [
         ...current,
         {
+          key,
           productId: product.id,
+          optionIds,
+          optionSummary: optionLabels.length ? optionLabels.join(", ") : undefined,
           name: product.name,
           sku: product.sku,
           unit: product.unit ?? "pcs",
-          unitPrice: product.price,
+          basePrice: product.price,
+          unitPrice,
           quantity: 1,
           trackInventory: tracked,
           stock,
@@ -350,10 +427,19 @@ export default function SalesPage() {
     });
   };
 
-  const changeQuantity = (productId: string, delta: number) => {
+  const chooseProduct = (product: Product) => {
+    const groups = (menuById.get(product.id)?.modifierGroups ?? []).filter((group) => group.options.length > 0);
+    if (!groups.length) {
+      addProduct(product);
+      return;
+    }
+    setPicker({ product, groups });
+  };
+
+  const changeQuantity = (key: string, delta: number) => {
     setCart((current) =>
       current.flatMap((line) => {
-        if (line.productId !== productId) return [line];
+        if (line.key !== key) return [line];
         const next = line.quantity + delta;
         if (next <= 0) return [];
         if (line.trackInventory && next > line.stock) {
@@ -369,8 +455,8 @@ export default function SalesPage() {
     );
   };
 
-  const removeLine = (productId: string) => {
-    setCart((current) => current.filter((line) => line.productId !== productId));
+  const removeLine = (key: string) => {
+    setCart((current) => current.filter((line) => line.key !== key));
   };
 
   const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -381,7 +467,7 @@ export default function SalesPage() {
       (product) => product.sku.toLowerCase() === query || (product.barcode ?? "").toLowerCase() === query
     );
     if (exact) {
-      addProduct(exact);
+      chooseProduct(exact);
       setSearch("");
     }
   };
@@ -535,7 +621,11 @@ export default function SalesPage() {
               {filtered.map((product) => {
                 const stock = stockMap.has(product.id) ? (stockMap.get(product.id) as number) : 0;
                 const tracked = product.trackInventory !== false;
-                const inCart = cart.find((line) => line.productId === product.id)?.quantity ?? 0;
+                const menuProduct = menuById.get(product.id);
+                const unavailable = menuProduct ? !menuProduct.available : false;
+                const inCart = cart
+                  .filter((line) => line.productId === product.id)
+                  .reduce((sum, line) => sum + line.quantity, 0);
                 const out = tracked && stock <= 0;
                 const maxed = tracked && stock > 0 && inCart >= stock;
                 return (
@@ -543,15 +633,17 @@ export default function SalesPage() {
                     key={product.id}
                     type="button"
                     className="product-tile"
-                    onClick={() => addProduct(product)}
-                    disabled={out || maxed}
+                    onClick={() => chooseProduct(product)}
+                    disabled={out || maxed || unavailable}
                     aria-label={`Add ${product.name} to order, ${formatCurrency(product.price, currency)}`}
                   >
                     <div className="row between" style={{ alignItems: "flex-start" }}>
                       <span className="product-tile__mono" aria-hidden="true">
                         {initials(product.name)}
                       </span>
-                      {out ? (
+                      {unavailable ? (
+                        <Badge tone="danger">86</Badge>
+                      ) : out ? (
                         <Badge tone="danger">Out</Badge>
                       ) : tracked && stock <= 10 ? (
                         <Badge tone="warning">{formatNumber(stock)} left</Badge>
@@ -562,13 +654,19 @@ export default function SalesPage() {
                     <div>
                       <div className="product-tile__name">{product.name}</div>
                       <div className="hint" style={{ marginTop: 2 }}>
-                        {product.categoryName || product.sku}
+                        {unavailable && menuProduct?.unavailableReason
+                          ? menuProduct.unavailableReason
+                          : product.categoryName || product.sku}
                       </div>
                     </div>
                     <div className="product-tile__meta">
                       <span className="product-tile__price">{formatCurrency(product.price, currency)}</span>
                       <span className="product-tile__stock" data-low={tracked && stock <= 10}>
-                        {tracked ? `${formatNumber(stock)} ${product.unit ?? ""}` : "Untracked"}
+                        {unavailable
+                          ? "Unavailable"
+                          : tracked
+                            ? `${formatNumber(stock)} ${product.unit ?? ""}`
+                            : "Untracked"}
                       </span>
                     </div>
                   </button>
@@ -641,10 +739,11 @@ export default function SalesPage() {
           <div className="cart__load">
             {cart.length ? (
               cart.map((line) => (
-                <div className="cart-line" key={line.productId}>
+                <div className="cart-line" key={line.key}>
                   <div style={{ minWidth: 0 }}>
                     <div className="cart-line__name">{line.name}</div>
                     <div className="hint">
+                      {line.optionSummary ? `${line.optionSummary} · ` : ""}
                       {formatCurrency(line.unitPrice, currency)} · {line.unit}
                     </div>
                   </div>
@@ -653,7 +752,7 @@ export default function SalesPage() {
                     <div className="qty" role="group" aria-label={`Quantity for ${line.name}`}>
                       <button
                         type="button"
-                        onClick={() => changeQuantity(line.productId, -1)}
+                        onClick={() => changeQuantity(line.key, -1)}
                         aria-label={`Decrease ${line.name}`}
                       >
                         <Minus aria-hidden="true" />
@@ -663,7 +762,7 @@ export default function SalesPage() {
                       </span>
                       <button
                         type="button"
-                        onClick={() => changeQuantity(line.productId, 1)}
+                        onClick={() => changeQuantity(line.key, 1)}
                         aria-label={`Increase ${line.name}`}
                         disabled={line.trackInventory && line.quantity >= line.stock}
                       >
@@ -673,7 +772,7 @@ export default function SalesPage() {
                     <button
                       type="button"
                       className="btn btn--link"
-                      onClick={() => removeLine(line.productId)}
+                      onClick={() => removeLine(line.key)}
                       aria-label={`Remove ${line.name}`}
                       style={{ fontSize: 11 }}
                     >
@@ -790,6 +889,16 @@ export default function SalesPage() {
         }}
       />
 
+      <ModifierPickerDialog
+        picker={picker}
+        currency={currency}
+        onClose={() => setPicker(null)}
+        onConfirm={(product, optionIds) => {
+          addProduct(product, optionIds);
+          setPicker(null);
+        }}
+      />
+
       <Dialog
         open={clearOpen}
         onClose={() => setClearOpen(false)}
@@ -873,6 +982,119 @@ export default function SalesPage() {
         ) : null}
       </Dialog>
     </>
+  );
+}
+
+function ModifierPickerDialog({
+  picker,
+  currency,
+  onClose,
+  onConfirm,
+}: {
+  picker: { product: Product; groups: ModifierGroup[] } | null;
+  currency: string;
+  onClose: () => void;
+  onConfirm: (product: Product, optionIds: string[]) => void;
+}) {
+  const [selection, setSelection] = React.useState<Record<string, string[]>>({});
+
+  React.useEffect(() => {
+    setSelection(picker ? defaultSelection(picker.groups) : {});
+  }, [picker]);
+
+  const groups = picker?.groups ?? [];
+  const optionIds = Object.values(selection).flat();
+  const delta = selectedDelta(groups, optionIds);
+  const total = (picker?.product.price ?? 0) + delta;
+  const incomplete = groups.filter(
+    (group) => (selection[group.id]?.length ?? 0) < Math.max(group.minSelect, group.isRequired ? 1 : 0)
+  );
+
+  const toggle = (group: ModifierGroup, optionId: string) => {
+    setSelection((current) => {
+      const chosen = current[group.id] ?? [];
+      if (group.selectionType === "single") {
+        return { ...current, [group.id]: chosen.includes(optionId) ? [] : [optionId] };
+      }
+      if (chosen.includes(optionId)) {
+        return { ...current, [group.id]: chosen.filter((id) => id !== optionId) };
+      }
+      if (group.maxSelect > 0 && chosen.length >= group.maxSelect) return current;
+      return { ...current, [group.id]: [...chosen, optionId] };
+    });
+  };
+
+  return (
+    <Dialog
+      open={Boolean(picker)}
+      onClose={onClose}
+      title={picker ? picker.product.name : "Choose options"}
+      description={
+        picker
+          ? `Base ${formatCurrency(picker.product.price, currency)}. Required choices are marked.`
+          : undefined
+      }
+      width={480}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            disabled={incomplete.length > 0}
+            onClick={() => picker && onConfirm(picker.product, optionIds)}
+          >
+            Add · {formatCurrency(total, currency)}
+          </Button>
+        </>
+      }
+    >
+      {incomplete.length ? (
+        <div className="alert alert--warning" role="alert">
+          Choose {incomplete.map((group) => group.name).join(", ")} to continue.
+        </div>
+      ) : null}
+
+      <div className="stack" style={{ gap: 18 }}>
+        {groups.map((group) => {
+          const chosen = selection[group.id] ?? [];
+          return (
+            <section key={group.id} aria-label={group.name}>
+              <div className="row between" style={{ alignItems: "baseline", gap: 8 }}>
+                <div>
+                  <b style={{ fontSize: 13 }}>{group.name}</b>
+                  <p className="hint" style={{ marginTop: 2 }}>
+                    {group.selectionType === "single"
+                      ? "Choose one"
+                      : group.maxSelect > 0
+                        ? `Choose up to ${group.maxSelect}`
+                        : "Choose any"}
+                  </p>
+                </div>
+                {group.isRequired ? <Badge tone="warning">Required</Badge> : null}
+              </div>
+              <div className="chips" style={{ marginTop: 8 }}>
+                {group.options.map((option) => (
+                  <ChipButton
+                    key={option.id}
+                    active={chosen.includes(option.id)}
+                    disabled={!option.available}
+                    aria-label={`${option.name}${option.priceDelta ? `, plus ${formatCurrency(option.priceDelta, currency)}` : ""}`}
+                    onClick={() => toggle(group, option.id)}
+                  >
+                    {option.name}
+                    {option.priceDelta ? (
+                      <span className="chip__count">+{formatNumber(option.priceDelta, "en-GB")}</span>
+                    ) : null}
+                  </ChipButton>
+                ))}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+    </Dialog>
   );
 }
 

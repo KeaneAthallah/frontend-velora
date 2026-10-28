@@ -13,7 +13,7 @@ export type ProductInput = {
   active?: boolean;
 };
 
-function normalizeProduct(product: any): Product {
+export function normalizeProduct(product: any): Product {
   return {
     id: String(product.id),
     name: product.name,

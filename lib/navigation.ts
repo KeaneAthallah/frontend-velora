@@ -11,6 +11,7 @@ import {
   Truck,
   Users,
   UserRound,
+  UtensilsCrossed,
 } from "lucide-react";
 
 export type NavItem = {
@@ -63,6 +64,13 @@ export const navGroups: NavGroup[] = [
         icon: Package,
         permission: "products.view",
         description: "Items, prices, and categories",
+      },
+      {
+        label: "Menu",
+        href: "/menu",
+        icon: UtensilsCrossed,
+        permission: "menu.view",
+        description: "Modifiers, combos, and availability",
       },
       {
         label: "Inventory",

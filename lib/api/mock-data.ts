@@ -3,8 +3,10 @@ import type {
   Business,
   Category,
   Customer,
+  Daypart,
   Employee,
   InventoryMovement,
+  ModifierGroup,
   Outlet,
   PaymentMethod,
   Product,
@@ -88,6 +90,96 @@ export const mockProducts: Product[] = [
   { id: "p15", name: "Ceramic Cup 240ml", sku: "MER-CUP-240", categoryId: "c4", categoryName: "Merchandise", price: 120000, cost: 54000, taxRate: mockTaxRate, stockByOutlet: { o1: 8, o2: 3 }, active: true, trackInventory: true, unit: "piece" },
   { id: "p16", name: "House Blend — 250g", sku: "BEAN-HSE-250", categoryId: "c5", categoryName: "Beans", price: 95000, cost: 57000, taxRate: mockTaxRate, stockByOutlet: { o1: 36, o2: 16 }, active: true, trackInventory: true, unit: "bag" },
 ];
+
+export const mockModifierGroups: ModifierGroup[] = [
+  {
+    id: "mg1",
+    name: "Milk",
+    kind: "modifier",
+    selectionType: "single",
+    minSelect: 1,
+    maxSelect: 1,
+    isRequired: true,
+    sortOrder: 0,
+    options: [
+      { id: "mo1", groupId: "mg1", name: "Whole milk", priceDelta: 0, isDefault: true, available: true },
+      { id: "mo2", groupId: "mg1", name: "Oat milk", priceDelta: 6000, isDefault: false, available: true },
+      { id: "mo3", groupId: "mg1", name: "Almond milk", priceDelta: 8000, isDefault: false, available: true },
+    ],
+  },
+  {
+    id: "mg2",
+    name: "Size",
+    kind: "modifier",
+    selectionType: "single",
+    minSelect: 1,
+    maxSelect: 1,
+    isRequired: true,
+    sortOrder: 1,
+    options: [
+      { id: "mo4", groupId: "mg2", name: "Regular", priceDelta: 0, isDefault: true, available: true },
+      { id: "mo5", groupId: "mg2", name: "Large", priceDelta: 8000, isDefault: false, available: true },
+    ],
+  },
+  {
+    id: "mg3",
+    name: "Add-ons",
+    kind: "modifier",
+    selectionType: "multiple",
+    minSelect: 0,
+    maxSelect: 3,
+    isRequired: false,
+    sortOrder: 2,
+    options: [
+      { id: "mo6", groupId: "mg3", name: "Extra espresso shot", priceDelta: 8000, isDefault: false, available: true },
+      { id: "mo7", groupId: "mg3", name: "Vanilla syrup", priceDelta: 5000, isDefault: false, available: true },
+      { id: "mo8", groupId: "mg3", name: "Whipped cream", priceDelta: 4000, isDefault: false, available: true },
+    ],
+  },
+  {
+    id: "mg4",
+    name: "Pastry box",
+    kind: "combo",
+    selectionType: "multiple",
+    minSelect: 1,
+    maxSelect: 2,
+    isRequired: true,
+    sortOrder: 3,
+    options: [
+      { id: "mo9", groupId: "mg4", name: "Butter Croissant", priceDelta: 0, isDefault: true, available: true, productId: "p10" },
+      { id: "mo10", groupId: "mg4", name: "Pain au Chocolat", priceDelta: 2000, isDefault: false, available: true, productId: "p11" },
+      { id: "mo11", groupId: "mg4", name: "Blueberry Muffin", priceDelta: 0, isDefault: false, available: true, productId: "p13" },
+    ],
+  },
+];
+
+/** Which modifier groups each product offers. Category-level attachments live below. */
+export const mockModifierAssignments: Record<string, string[]> = {
+  p1: ["mg1", "mg2", "mg3"],
+  p2: ["mg1", "mg2", "mg3"],
+  p3: ["mg1", "mg2", "mg3"],
+  p4: ["mg1", "mg2", "mg3"],
+  p5: ["mg1", "mg2", "mg3"],
+  p7: ["mg1", "mg2"],
+  p8: ["mg1", "mg2", "mg3"],
+  p16: ["mg4"],
+};
+
+export const mockModifierCategoryAssignments: Record<string, string[]> = {
+  c1: ["mg3"],
+};
+
+export const mockDayparts: Daypart[] = [
+  { id: "dp1", name: "Breakfast", startTime: "06:00", endTime: "11:00", days: [], isActive: true, productCount: 0 },
+  { id: "dp2", name: "Lunch", startTime: "11:00", endTime: "16:00", days: [], isActive: true, productCount: 0 },
+  { id: "dp3", name: "Dinner", startTime: "16:00", endTime: "22:00", days: [], isActive: true, productCount: 0 },
+];
+
+/** productId -> daypart ids. Empty means the product is always in its daypart. */
+export const mockProductDayparts: Record<string, string[]> = {};
+
+/** `${outletId}:${productId}` -> override. Missing means available. */
+export const mockMenuAvailability: Record<string, { available: boolean; reason?: string }> = {};
 
 export const mockPaymentMethods: PaymentMethod[] = [
   { id: "pm1", name: "Cash", type: "cash", active: true },

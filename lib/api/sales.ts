@@ -1,6 +1,6 @@
 import { format } from "date-fns";
 import { apiRequest, USE_MOCK_API } from "./client";
-import { adjustMockStock, mockDb, mockId, mockProduct } from "./mock-db";
+import { adjustMockStock, mockDb, mockId, mockLinePrice, mockProduct } from "./mock-db";
 import type { Paginated, Transaction } from "./types";
 
 export function mapSale(sale: any): Transaction {
@@ -184,7 +184,7 @@ export async function checkout(request: {
   outletId: string;
   cashierId: string;
   customerId?: string;
-  items: { productId: string; variantId?: string; discount?: number; quantity: number }[];
+  items: { productId: string; variantId?: string; discount?: number; quantity: number; optionIds?: string[] }[];
   cartDiscount?: number;
   notes?: string;
   idempotencyKey: string;
@@ -197,13 +197,14 @@ export async function checkout(request: {
     const items = request.items.map((item) => {
       const product = mockProduct(item.productId);
       if (!product) throw new Error("Product not found");
-      const lineTotal = product.price * item.quantity - (item.discount ?? 0);
+      const unitPrice = mockLinePrice(item.productId, item.optionIds ?? []);
+      const lineTotal = unitPrice * item.quantity - (item.discount ?? 0);
       return {
         productId: product.id,
         name: product.name,
         sku: product.sku,
         quantity: item.quantity,
-        unitPrice: product.price,
+        unitPrice,
         discount: item.discount ?? 0,
         lineTotal,
       };
@@ -277,6 +278,7 @@ export async function checkout(request: {
       product_variant_id: item.variantId ? Number(item.variantId) : null,
       quantity: item.quantity,
       discount_amount: item.discount ?? 0,
+      option_ids: item.optionIds?.map(Number) ?? [],
     })),
   };
   const sale = await apiRequest<any>("/sales", {

@@ -42,6 +42,54 @@ export type Product = {
 
 export type Category = { id: string; name: string; productCount: number };
 
+export type ModifierOption = {
+  id: string;
+  groupId: string;
+  name: string;
+  priceDelta: number;
+  isDefault: boolean;
+  available: boolean;
+  unavailableReason?: string;
+  productId?: string;
+  productVariantId?: string;
+};
+
+export type ModifierGroup = {
+  id: string;
+  name: string;
+  kind: "modifier" | "combo";
+  selectionType: "single" | "multiple";
+  minSelect: number;
+  maxSelect: number;
+  isRequired: boolean;
+  sortOrder: number;
+  options: ModifierOption[];
+};
+
+export type MenuProduct = Product & {
+  available: boolean;
+  unavailableReason?: string;
+  isCombo?: boolean;
+  daypartIds: string[];
+  modifierGroups: ModifierGroup[];
+};
+
+export type MenuResponse = {
+  outlet: { id: string; name: string };
+  generatedAt: string;
+  products: MenuProduct[];
+};
+
+export type Daypart = {
+  id: string;
+  name: string;
+  startTime: string;
+  endTime: string;
+  days: number[];
+  isActive: boolean;
+  productCount: number;
+};
+
 export type CartItem = {
   productId: string;
   variantId?: string;
@@ -57,7 +105,7 @@ export type CheckoutRequest = {
   outletId: string;
   cashierId: string;
   customerId?: string;
-  items: { productId: string; variantId?: string; quantity: number; discount?: number }[];
+  items: { productId: string; variantId?: string; quantity: number; discount?: number; optionIds?: string[] }[];
   cartDiscount?: number;
   notes?: string;
   idempotencyKey: string;
