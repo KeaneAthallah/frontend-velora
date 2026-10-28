@@ -202,6 +202,7 @@ export type CreateOrderRequest = {
   outletId: string;
   orderType: OrderType;
   customerId?: string;
+  tableId?: string;
   notes?: string;
   fulfilment?: OrderFulfilment;
   items: OrderItemInput[];
@@ -211,9 +212,51 @@ export type CreateOrderRequest = {
 export type UpdateOrderRequest = {
   orderType?: OrderType;
   customerId?: string | null;
+  tableId?: string | null;
   notes?: string;
   fulfilment?: OrderFulfilment | null;
   items?: OrderItemInput[];
+};
+
+export type TableStatus = "available" | "reserved" | "cleaning" | "occupied";
+
+export type TableShape = "round" | "square" | "rect";
+
+export type FloorArea = {
+  id: string;
+  outletId: string;
+  name: string;
+  sortOrder: number;
+};
+
+export type DiningTable = {
+  id: string;
+  outletId: string;
+  outletName?: string;
+  name: string;
+  seats: number;
+  shape: TableShape;
+  positionX: number;
+  positionY: number;
+  status: TableStatus;
+  manualStatus: Exclude<TableStatus, "occupied">;
+  occupied: boolean;
+  isActive: boolean;
+  notes?: string;
+  area?: { id: string; name: string } | null;
+  activeOrder?: {
+    id: string;
+    orderNumber?: string;
+    orderStatus: OrderStatus;
+    total: number;
+    itemsCount: number;
+    createdAt: string;
+  } | null;
+};
+
+export type FloorPlan = {
+  areas: FloorArea[];
+  tables: DiningTable[];
 };
 
 export type Transaction = {
@@ -248,6 +291,8 @@ export type Transaction = {
   orderNumber?: string;
   orderType?: OrderType;
   orderStatus?: OrderStatus;
+  tableId?: string;
+  tableName?: string;
   fulfilment?: OrderFulfilment;
   firedAt?: string;
   readyAt?: string;

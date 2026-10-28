@@ -3,7 +3,9 @@ import {
   mockCategories,
   mockCustomers,
   mockDayparts,
+  mockDiningTables,
   mockEmployees,
+  mockFloorAreas,
   mockIngredientBalances,
   mockIngredientMovements,
   mockIngredients,
@@ -29,7 +31,9 @@ import type {
   Category,
   Customer,
   Daypart,
+  DiningTable,
   Employee,
+  FloorArea,
   Ingredient,
   IngredientMovement,
   InventoryMovement,
@@ -88,6 +92,8 @@ export const mockDb: {
   }[];
   ingredientBalances: Record<string, number>;
   ingredientMovements: IngredientMovement[];
+  floorAreas: FloorArea[];
+  diningTables: DiningTable[];
 } = {
   business: { ...mockBusiness },
   outlets: mockOutlets.map((outlet) => ({ ...outlet })),
@@ -130,6 +136,8 @@ export const mockDb: {
   recipeItems: mockRecipeItems.map((item) => ({ ...item })),
   ingredientBalances: { ...mockIngredientBalances },
   ingredientMovements: mockIngredientMovements.map((movement) => ({ ...movement })),
+  floorAreas: mockFloorAreas.map((area) => ({ ...area })),
+  diningTables: mockDiningTables.map((table) => ({ ...table, area: table.area ? { ...table.area } : null })),
 };
 
 // Development-only fixture used by the mock data toggle. `data=worst` swaps

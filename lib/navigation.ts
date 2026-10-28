@@ -5,6 +5,7 @@ import {
   ChefHat,
   ClipboardList,
   LayoutDashboard,
+  LayoutGrid,
   Package,
   Receipt,
   Settings,
@@ -53,6 +54,13 @@ export const navGroups: NavGroup[] = [
         icon: ClipboardList,
         permission: "orders.view",
         description: "Open tabs and the kitchen queue",
+      },
+      {
+        label: "Floor plan",
+        href: "/tables",
+        icon: LayoutGrid,
+        permission: "tables.view",
+        description: "Dine-in tables and live occupancy",
       },
       {
         label: "Transactions",
@@ -205,6 +213,7 @@ export function defaultRoute(has: (permission: string) => boolean) {
   if (has("reports.view")) return "/";
   if (has("sales.create")) return "/sales";
   if (has("orders.view")) return "/orders";
+  if (has("tables.view")) return "/tables";
   if (has("sales.view")) return "/transactions";
   if (has("products.view")) return "/products";
   if (has("inventory.view")) return "/inventory";

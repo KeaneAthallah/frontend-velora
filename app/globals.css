@@ -3040,6 +3040,149 @@ hr {
 }
 
 /* --------------------------------------------------------------------------
+   Floor plan (areas + tables)
+   -------------------------------------------------------------------------- */
+.floor-plan {
+  display: grid;
+  gap: 18px;
+}
+.floor-area {
+  display: grid;
+  gap: 10px;
+}
+.floor-area__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 2px;
+}
+.floor-area__head b {
+  display: block;
+  font-size: 13px;
+  letter-spacing: -0.01em;
+}
+.floor-area__head .hint {
+  display: block;
+  margin-top: 1px;
+  font-size: 11px;
+}
+.floor-area__tools {
+  display: flex;
+  gap: 4px;
+}
+.floor-area__empty {
+  margin: 0;
+  padding: 14px;
+  border: 1px dashed hsl(var(--border));
+  border-radius: var(--radius);
+  font-size: 11.5px;
+  color: hsl(var(--muted-foreground));
+}
+.floor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+.table-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid hsl(var(--border));
+  border-left: 3px solid hsl(var(--success-border));
+  border-radius: var(--radius);
+  background: hsl(var(--surface));
+  min-width: 0;
+}
+.table-card[data-status="occupied"] {
+  border-left-color: hsl(var(--danger));
+}
+.table-card[data-status="reserved"] {
+  border-left-color: hsl(var(--warning-border));
+}
+.table-card[data-status="cleaning"] {
+  border-left-color: hsl(var(--ink-3));
+}
+.table-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.table-card__name {
+  display: block;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+}
+.table-card__seats {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  font-size: 10.5px;
+  color: hsl(var(--ink-3));
+}
+.table-card__seats svg {
+  width: 11px;
+  height: 11px;
+}
+.table-card__order {
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: hsl(var(--surface-2));
+}
+.table-card__order .mono {
+  font-size: 11px;
+  font-weight: 650;
+  color: hsl(var(--ink));
+}
+.table-card__order .hint {
+  margin: 0;
+  font-size: 10.5px;
+}
+.table-card[data-status="occupied"] .table-card__order {
+  background: hsl(var(--danger-bg));
+}
+.table-card__order--empty {
+  min-height: 54px;
+  align-content: center;
+}
+.table-card__note {
+  font-size: 10.5px;
+  color: hsl(var(--ink-3));
+}
+.table-card__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.table-card__actions .btn {
+  min-height: 34px;
+}
+.table-card__tools {
+  display: flex;
+  gap: 2px;
+}
+.table-card__tools .btn {
+  padding-inline: 8px;
+}
+.table-card__actions > .icon-btn {
+  margin-left: auto;
+}
+
+@media (max-width: 640px) {
+  .floor-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+  .table-card__actions .btn {
+    min-height: 40px;
+  }
+}
+
+/* --------------------------------------------------------------------------
    Auth
    -------------------------------------------------------------------------- */
 .auth {

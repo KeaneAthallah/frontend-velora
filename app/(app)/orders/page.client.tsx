@@ -130,6 +130,7 @@ export default function OrdersPage() {
     queryClient.invalidateQueries({ queryKey: ["reports"] });
     queryClient.invalidateQueries({ queryKey: ["inventory"] });
     queryClient.invalidateQueries({ queryKey: ["pos-stock"] });
+    queryClient.invalidateQueries({ queryKey: ["floor-plan"] });
   };
 
   const statusMutation = useMutation({
@@ -227,6 +228,12 @@ export default function OrdersPage() {
             <div className="order-card__meta">
               {typeIcon(order.orderType)}
               <span>{orderTypeLabel(order.orderType)}</span>
+              {order.tableName ? (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className="tag">{order.tableName}</span>
+                </>
+              ) : null}
               <span aria-hidden="true">·</span>
               <span>{formatTime(order.createdAt)}</span>
             </div>
@@ -470,6 +477,12 @@ export default function OrdersPage() {
                           <div className="order-card__meta">
                             {typeIcon(order.orderType)}
                             <span>{orderTypeLabel(order.orderType)}</span>
+                            {order.tableName ? (
+                              <>
+                                <span aria-hidden="true">·</span>
+                                <span className="tag">{order.tableName}</span>
+                              </>
+                            ) : null}
                             <span aria-hidden="true">·</span>
                             <span>{formatTime(order.createdAt)}</span>
                           </div>

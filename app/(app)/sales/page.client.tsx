@@ -45,6 +45,7 @@ import { checkout } from "@/lib/api/sales";
 import { checkoutOrder, createOrder, getOrder, updateOrder } from "@/lib/api/orders";
 import { listCustomers } from "@/lib/api/customers";
 import { stockByOutlet } from "@/lib/api/inventory";
+import { listFloorPlan } from "@/lib/api/tables";
 import type {
   Customer,
   ModifierGroup,
@@ -176,9 +177,11 @@ export default function SalesPage() {
   const [actionError, setActionError] = React.useState<string | null>(null);
   const [picker, setPicker] = React.useState<{ product: Product; groups: ModifierGroup[] } | null>(null);
   const [orderType, setOrderType] = React.useState<OrderType>("dine_in");
+  const [tableId, setTableId] = React.useState("");
   const [fulfilment, setFulfilment] = React.useState<OrderFulfilment>(EMPTY_FULFILMENT);
   const [resumedOrder, setResumedOrder] = React.useState<Transaction | null>(null);
   const [orderParam, setOrderParam, orderParamReady] = useSearchParamState("order");
+  const [tableParam, setTableParam, tableParamReady] = useSearchParamState("table");
 
   const searchRef = React.useRef<HTMLInputElement>(null);
   const checkoutKeyRef = React.useRef<string | null>(null);
@@ -256,6 +259,27 @@ export default function SalesPage() {
     staleTime: 60_000,
   });
 
+  const tablesQuery = useQuery({
+    queryKey: ["floor-plan", outletId, "pos"],
+    queryFn: () => listFloorPlan({ outletId: outletId ?? undefined }),
+    enabled: has("tables.view") && Boolean(outletId) && orderType === "dine_in",
+    staleTime: 15_000,
+  });
+
+  // /sales?table=ID&type=dine_in is the deep link used by the floor plan.
+  React.useEffect(() => {
+    if (!tableParamReady || !tableParam) return;
+    if (orderParam) return;
+    setTableId(tableParam);
+    setOrderType("dine_in");
+    setTableParam("");
+    replaceSearchParam("table", "");
+  }, [tableParamReady, tableParam, orderParam, setTableParam]);
+
+  React.useEffect(() => {
+    if (orderType !== "dine_in") setTableId("");
+  }, [orderType]);
+
   const resumeQuery = useQuery({
     queryKey: ["pos-order", orderParam],
     queryFn: () => getOrder(orderParam),
@@ -270,6 +294,7 @@ export default function SalesPage() {
     hydratedOrderRef.current = order.id;
     setResumedOrder(order);
     setOrderType(order.orderType ?? "dine_in");
+    setTableId(order.tableId ?? "");
     setFulfilment({ ...EMPTY_FULFILMENT, ...(order.fulfilment ?? {}) });
     setCustomer(
       order.customerId
@@ -389,6 +414,17 @@ export default function SalesPage() {
   const itemCount = cart.reduce((sum, line) => sum + line.quantity, 0);
   const selectedMethod = methodsQuery.data?.find((method) => method.type === paymentMethod);
 
+  const tableOptions = (tablesQuery.data?.tables ?? []).filter(
+    (table) =>
+      table.isActive &&
+      table.manualStatus !== "cleaning" &&
+      (!table.occupied || table.id === resumedOrder?.tableId)
+  );
+  const tableLabel =
+    tablesQuery.data?.tables.find((table) => table.id === tableId)?.name ??
+    (resumedOrder?.tableId === tableId ? resumedOrder.tableName : undefined) ??
+    (tableId ? "Selected table" : undefined);
+
   const fulfillmentFilled = Boolean(
     fulfilment.contactName?.trim() ||
       fulfilment.contactPhone?.trim() ||
@@ -424,6 +460,7 @@ export default function SalesPage() {
     setCustomer(null);
     setFulfilment(EMPTY_FULFILMENT);
     setOrderType("dine_in");
+    setTableId("");
     checkoutKeyRef.current = null;
     saveKeyRef.current = null;
   };
@@ -438,6 +475,7 @@ export default function SalesPage() {
       if (resumedOrder) {
         const updated = await updateOrder(resumedOrder.id, {
           orderType,
+          tableId: orderType === "dine_in" && tableId ? tableId : null,
           fulfilment: cleanFulfilment() ?? null,
           customerId: customer?.id ?? null,
           items: orderItems(),
@@ -459,6 +497,7 @@ export default function SalesPage() {
         idempotencyKey: checkoutKeyRef.current,
         paymentMethod,
         orderType,
+        tableId: orderType === "dine_in" && tableId ? tableId : undefined,
         fulfilment: cleanFulfilment(),
       });
     },
@@ -471,6 +510,7 @@ export default function SalesPage() {
       setOrderParam("");
       replaceSearchParam("order", "");
       setFulfilment(EMPTY_FULFILMENT);
+      setTableId("");
       checkoutKeyRef.current = null;
       saveKeyRef.current = null;
       setActionError(null);
@@ -489,6 +529,7 @@ export default function SalesPage() {
       }
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["floor-plan"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["reports"] });
       queryClient.invalidateQueries({ queryKey: ["inventory"] });
@@ -515,6 +556,7 @@ export default function SalesPage() {
       return createOrder({
         outletId,
         orderType,
+        tableId: orderType === "dine_in" && tableId ? tableId : undefined,
         customerId: customer?.id,
         items: orderItems(),
         fulfilment: cleanFulfilment(),
@@ -531,9 +573,11 @@ export default function SalesPage() {
       setCustomer(null);
       setFulfilment(EMPTY_FULFILMENT);
       setOrderType("dine_in");
+      setTableId("");
       setActionError(null);
       saveKeyRef.current = null;
       queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["floor-plan"] });
       window.setTimeout(() => searchRef.current?.focus(), 100);
     },
     onError: (error) => {
@@ -874,6 +918,7 @@ export default function SalesPage() {
               </div>
               <p className="hint" style={{ marginTop: 2 }}>
                 {resumedOrder?.orderNumber ?? outlet?.name ?? "Selected outlet"}
+                {tableLabel ? ` · ${tableLabel}` : ""}
               </p>
             </div>
             {cart.length ? (
@@ -900,6 +945,37 @@ export default function SalesPage() {
                 </ChipButton>
               ))}
             </div>
+
+            {orderType === "dine_in" && has("tables.view") ? (
+              <div className="stack-sm" style={{ marginTop: 10 }}>
+                <div className="eyebrow">Table</div>
+                {tablesQuery.isLoading ? (
+                  <span className="hint">Loading tables…</span>
+                ) : tableOptions.length ? (
+                  <div className="chips" role="radiogroup" aria-label="Dining table">
+                    <ChipButton active={!tableId} onClick={() => setTableId("")}>
+                      No table
+                    </ChipButton>
+                    {tableOptions.map((table) => (
+                      <ChipButton
+                        key={table.id}
+                        active={tableId === table.id}
+                        onClick={() => setTableId(table.id)}
+                        title={`${table.name} · ${table.seats} seats${
+                          table.manualStatus === "reserved" ? " · reserved" : ""
+                        }`}
+                      >
+                        {table.name}
+                      </ChipButton>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="hint">
+                    No free tables right now. Free one on the floor plan or take the order without a table.
+                  </span>
+                )}
+              </div>
+            ) : null}
 
             {resumedOrder ? (
               <div className="alert alert--warning" role="status" style={{ marginTop: 10 }}>

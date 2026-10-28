@@ -4,7 +4,9 @@ import type {
   Category,
   Customer,
   Daypart,
+  DiningTable,
   Employee,
+  FloorArea,
   Ingredient,
   IngredientMovement,
   InventoryMovement,
@@ -541,6 +543,8 @@ function makeOpenOrder(input: {
   notes?: string;
   fulfilment?: Transaction["fulfilment"];
   customerIndex?: number;
+  tableId?: string;
+  tableName?: string;
 }): Transaction {
   const outlet = mockOutlets[input.outletIndex];
   const cashier = mockEmployees[0];
@@ -575,12 +579,32 @@ function makeOpenOrder(input: {
     orderNumber,
     orderType: input.type,
     orderStatus: input.status,
+    tableId: input.tableId,
+    tableName: input.tableName,
     fulfilment: input.fulfilment,
     firedAt: input.status === "open" ? undefined : createdAt,
     readyAt: input.status === "ready" || input.status === "served" ? createdAt : undefined,
     servedAt: input.status === "served" ? createdAt : undefined,
   };
 }
+
+export const mockFloorAreas: FloorArea[] = [
+  { id: "fa1", outletId: "o1", name: "Main hall", sortOrder: 1 },
+  { id: "fa2", outletId: "o1", name: "Terrace", sortOrder: 2 },
+  { id: "fa3", outletId: "o2", name: "Main hall", sortOrder: 1 },
+];
+
+export const mockDiningTables: DiningTable[] = [
+  { id: "t1", outletId: "o1", name: "T01", seats: 2, shape: "round", positionX: 1, positionY: 1, status: "available", manualStatus: "available", occupied: false, isActive: true, area: { id: "fa1", name: "Main hall" } },
+  { id: "t2", outletId: "o1", name: "T02", seats: 4, shape: "square", positionX: 2, positionY: 1, status: "available", manualStatus: "available", occupied: false, isActive: true, area: { id: "fa1", name: "Main hall" } },
+  { id: "t3", outletId: "o1", name: "T03", seats: 4, shape: "round", positionX: 3, positionY: 1, status: "reserved", manualStatus: "reserved", occupied: false, isActive: true, notes: "Reserved for 19:00", area: { id: "fa1", name: "Main hall" } },
+  { id: "t4", outletId: "o1", name: "T04", seats: 2, shape: "square", positionX: 1, positionY: 2, status: "available", manualStatus: "available", occupied: false, isActive: true, area: { id: "fa1", name: "Main hall" } },
+  { id: "t5", outletId: "o1", name: "T05", seats: 6, shape: "rect", positionX: 1, positionY: 1, status: "available", manualStatus: "available", occupied: false, isActive: true, area: { id: "fa2", name: "Terrace" } },
+  { id: "t6", outletId: "o1", name: "T06", seats: 2, shape: "round", positionX: 2, positionY: 1, status: "cleaning", manualStatus: "cleaning", occupied: false, isActive: true, area: { id: "fa2", name: "Terrace" } },
+  { id: "t7", outletId: "o1", name: "T07", seats: 2, shape: "round", positionX: 4, positionY: 1, status: "available", manualStatus: "available", occupied: false, isActive: true, area: { id: "fa1", name: "Main hall" } },
+  { id: "t8", outletId: "o2", name: "T01", seats: 2, shape: "round", positionX: 1, positionY: 1, status: "available", manualStatus: "available", occupied: false, isActive: true, area: { id: "fa3", name: "Main hall" } },
+  { id: "t9", outletId: "o2", name: "T02", seats: 4, shape: "square", positionX: 2, positionY: 1, status: "available", manualStatus: "available", occupied: false, isActive: true, area: { id: "fa3", name: "Main hall" } },
+];
 
 export const mockOpenOrders: Transaction[] = [
   makeOpenOrder({
@@ -591,8 +615,10 @@ export const mockOpenOrders: Transaction[] = [
     status: "open",
     minutesAgo: 4,
     lines: [["p1", 2], ["p10", 1]],
-    notes: "Table 4 · 2 guests",
+    notes: "2 guests",
     customerIndex: 0,
+    tableId: "t4",
+    tableName: "T04",
   }),
   makeOpenOrder({
     id: "ord-2",
@@ -612,7 +638,9 @@ export const mockOpenOrders: Transaction[] = [
     status: "ready",
     minutesAgo: 14,
     lines: [["p9", 1], ["p10", 2]],
-    notes: "Table 2 · no sugar",
+    notes: "No sugar",
+    tableId: "t9",
+    tableName: "T02",
   }),
   makeOpenOrder({
     id: "ord-4",
@@ -647,7 +675,9 @@ export const mockOpenOrders: Transaction[] = [
     status: "open",
     minutesAgo: 1,
     lines: [["p2", 1]],
-    notes: "Table 7 · 1 guest",
+    notes: "1 guest",
+    tableId: "t7",
+    tableName: "T07",
   }),
 ];
 

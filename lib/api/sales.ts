@@ -1,6 +1,7 @@
 import { format } from "date-fns";
 import { apiRequest, USE_MOCK_API } from "./client";
 import { adjustMockStock, consumeMockIngredients, mockDb, mockId, mockLinePrice, mockNextOrderNumber, mockProduct, reverseMockIngredients } from "./mock-db";
+import { mockActiveOrderForTable } from "./tables";
 import type { OrderFulfilment, OrderType, Paginated, Transaction } from "./types";
 
 export function mapSale(sale: any): Transaction {
@@ -58,6 +59,8 @@ export function mapSale(sale: any): Transaction {
     orderNumber: sale.order_number ?? undefined,
     orderType: sale.order_type ?? undefined,
     orderStatus: sale.order_status ?? undefined,
+    tableId: sale.table_id ? String(sale.table_id) : undefined,
+    tableName: sale.table?.name ?? sale.table_name ?? undefined,
     fulfilment: sale.fulfilment
       ? {
           contactName: sale.fulfilment.contact_name ?? undefined,
@@ -208,10 +211,23 @@ export async function checkout(request: {
   idempotencyKey: string;
   paymentMethod?: string;
   orderType?: OrderType;
+  tableId?: string;
   fulfilment?: OrderFulfilment;
 }): Promise<Transaction> {
   const orderType = request.orderType ?? "takeaway";
   if (USE_MOCK_API) {
+    const table = request.tableId
+      ? mockDb.diningTables.find(
+          (entry) => entry.id === request.tableId && entry.outletId === request.outletId
+        )
+      : undefined;
+    if (request.tableId && !table) throw new Error("Table not found in this outlet");
+    if (table && orderType !== "dine_in") throw new Error("Tables are only for dine-in orders");
+    if (table && !table.isActive) throw new Error("This table is inactive");
+    if (request.tableId && mockActiveOrderForTable(request.tableId)) {
+      throw new Error("This table already has an open order");
+    }
+
     const taxRate = mockDb.taxRates.find((rate) => rate.isDefault && rate.isActive);
     const rate = taxRate?.rate ?? 0;
     const inclusive = taxRate?.type === "inclusive";
@@ -274,6 +290,8 @@ export async function checkout(request: {
       orderNumber,
       orderType,
       orderStatus: "completed",
+      tableId: table?.id,
+      tableName: table?.name,
       fulfilment: request.fulfilment,
     };
     mockDb.transactions = [transaction, ...mockDb.transactions];
@@ -310,6 +328,7 @@ export async function checkout(request: {
     notes: request.notes,
     idempotency_key: request.idempotencyKey,
     order_type: orderType,
+    ...(request.tableId ? { table_id: Number(request.tableId) } : {}),
     ...(request.fulfilment
       ? {
           fulfilment: {

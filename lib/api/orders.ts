@@ -10,8 +10,10 @@ import {
   mockProduct,
 } from "./mock-db";
 import { mapSale } from "./sales";
+import { mockActiveOrderForTable } from "./tables";
 import type {
   CreateOrderRequest,
+  DiningTable,
   OrderItemInput,
   OrderStatus,
   OrderType,
@@ -183,6 +185,7 @@ function orderBody(request: CreateOrderRequest | UpdateOrderRequest) {
   return {
     ...("orderType" in request && request.orderType ? { order_type: request.orderType } : {}),
     ...("customerId" in request ? { customer_id: request.customerId ? Number(request.customerId) : null } : {}),
+    ...("tableId" in request ? { table_id: request.tableId ? Number(request.tableId) : null } : {}),
     ...("notes" in request ? { notes: request.notes } : {}),
     ...("fulfilment" in request
       ? {
@@ -212,8 +215,32 @@ function orderBody(request: CreateOrderRequest | UpdateOrderRequest) {
   };
 }
 
+function mockResolveTable(
+  tableId: string | null | undefined,
+  outletId: string,
+  orderType: OrderType,
+  ignoreOrderId?: string
+): DiningTable | undefined {
+  if (!tableId) return undefined;
+
+  const table = mockDb.diningTables.find(
+    (entry) => entry.id === tableId && entry.outletId === outletId
+  );
+  if (!table) throw new Error("Table not found in this outlet");
+  if (orderType !== "dine_in") throw new Error("Tables are only for dine-in orders");
+  if (!table.isActive) throw new Error("This table is inactive");
+
+  const conflict = mockActiveOrderForTable(tableId);
+  if (conflict && conflict.id !== ignoreOrderId) {
+    throw new Error("This table already has an open order");
+  }
+
+  return table;
+}
+
 export async function createOrder(request: CreateOrderRequest): Promise<Transaction> {
   if (USE_MOCK_API) {
+    const table = mockResolveTable(request.tableId, request.outletId, request.orderType);
     const items = mockOrderItems(request.items);
     const totals = mockTotals(items);
     const orderNumber = mockNextOrderNumber(request.outletId, request.orderType);
@@ -239,6 +266,8 @@ export async function createOrder(request: CreateOrderRequest): Promise<Transact
       orderNumber,
       orderType: request.orderType,
       orderStatus: "open",
+      tableId: table?.id,
+      tableName: table?.name,
       fulfilment: request.fulfilment,
     };
     mockDb.orders.unshift(order);
@@ -263,6 +292,19 @@ export async function updateOrder(id: string, request: UpdateOrderRequest): Prom
     if (nextType === "delivery" && (!fulfilment?.contactPhone || !fulfilment?.address)) {
       throw new Error("Delivery orders need a contact phone and address");
     }
+
+    let tableId = order.tableId;
+    let tableName = order.tableName;
+    if (request.tableId !== undefined) {
+      const table = mockResolveTable(request.tableId, order.outletId, nextType, order.id);
+      tableId = table?.id;
+      tableName = table?.name;
+    } else if (nextType !== "dine_in") {
+      // Changing away from dine-in releases the table for other guests.
+      tableId = undefined;
+      tableName = undefined;
+    }
+
     if (request.items) {
       const items = mockOrderItems(request.items);
       order.items = items;
@@ -274,6 +316,8 @@ export async function updateOrder(id: string, request: UpdateOrderRequest): Prom
       order.customerName = mockDb.customers.find((entry) => entry.id === request.customerId)?.name;
     }
     order.orderType = nextType;
+    order.tableId = tableId;
+    order.tableName = tableName;
     order.fulfilment = fulfilment;
     return order;
   }
