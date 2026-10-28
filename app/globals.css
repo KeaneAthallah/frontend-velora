@@ -2871,6 +2871,175 @@ hr {
 }
 
 /* --------------------------------------------------------------------------
+   Orders board
+   -------------------------------------------------------------------------- */
+.order-board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.order-board--wide {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.order-column {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border-radius: var(--radius-md);
+  background: hsl(var(--surface-2));
+  border: 1px solid hsl(var(--border));
+}
+.order-column__head {
+  display: grid;
+  gap: 2px;
+  padding: 2px 4px 6px;
+}
+.order-column__head b {
+  font-size: 12.5px;
+  color: hsl(var(--ink));
+}
+.order-column__head .hint {
+  margin: 0;
+  font-size: 10.5px;
+}
+.order-column__icon {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: hsl(var(--surface));
+  color: hsl(var(--primary));
+  border: 1px solid hsl(var(--border));
+}
+.order-column__icon svg {
+  width: 12px;
+  height: 12px;
+}
+.order-column__list {
+  display: grid;
+  gap: 8px;
+  min-height: 60px;
+}
+.order-column__empty {
+  margin: 0;
+  padding: 14px 8px;
+  text-align: center;
+  font-size: 11px;
+  color: hsl(var(--ink-3));
+  border: 1px dashed hsl(var(--border-strong));
+  border-radius: var(--radius);
+}
+.order-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-radius: var(--radius);
+  background: hsl(var(--surface));
+  border: 1px solid hsl(var(--border));
+  box-shadow: var(--shadow-xs, 0 1px 2px hsl(var(--ink) / 0.04));
+}
+.order-card[data-late] {
+  border-color: hsl(var(--warning-border));
+  background: hsl(var(--warning-bg));
+}
+.order-card--closed {
+  opacity: 0.82;
+}
+.order-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.order-card__number {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: hsl(var(--ink));
+  overflow-wrap: anywhere;
+}
+.order-card__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 10.5px;
+  color: hsl(var(--ink-3));
+}
+.order-card__meta svg {
+  width: 11px;
+  height: 11px;
+}
+.order-card__items {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11.5px;
+  color: hsl(var(--ink-2));
+}
+.order-card__items li {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+.order-card__qty {
+  font-variant-numeric: tabular-nums;
+  color: hsl(var(--ink-3));
+  flex-shrink: 0;
+}
+.order-card__line {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: hsl(var(--ink-3));
+  font-size: 10.5px;
+}
+.order-card__note {
+  display: grid;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: hsl(var(--muted));
+  font-size: 10.5px;
+  color: hsl(var(--ink-2));
+}
+.order-card__note p {
+  margin: 0;
+}
+.order-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid hsl(var(--border));
+}
+.order-card__foot b {
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.order-card__foot .hint {
+  display: block;
+  font-size: 10px;
+}
+.order-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.order-card__actions .btn {
+  min-height: 34px;
+}
+.order-card__actions .icon-btn {
+  margin-left: auto;
+}
+
+/* --------------------------------------------------------------------------
    Auth
    -------------------------------------------------------------------------- */
 .auth {
@@ -3318,6 +3487,18 @@ hr {
   }
   .grid-4 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .order-board,
+  .order-board--wide {
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(258px, 1fr);
+    grid-template-columns: none;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    scroll-snap-type: x proximity;
+  }
+  .order-column {
+    scroll-snap-align: start;
   }
 }
 

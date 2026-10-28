@@ -177,6 +177,45 @@ export type Payment = {
   createdAt: string;
 };
 
+export type OrderType = "dine_in" | "takeaway" | "delivery" | "pickup";
+
+export type OrderStatus = "open" | "in_kitchen" | "ready" | "served" | "completed" | "cancelled";
+
+export type OrderFulfilment = {
+  contactName?: string;
+  contactPhone?: string;
+  address?: string;
+  scheduledAt?: string;
+  instructions?: string;
+};
+
+export type OrderItemInput = {
+  productId: string;
+  variantId?: string;
+  quantity: number;
+  discount?: number;
+  optionIds?: string[];
+  notes?: string;
+};
+
+export type CreateOrderRequest = {
+  outletId: string;
+  orderType: OrderType;
+  customerId?: string;
+  notes?: string;
+  fulfilment?: OrderFulfilment;
+  items: OrderItemInput[];
+  idempotencyKey?: string;
+};
+
+export type UpdateOrderRequest = {
+  orderType?: OrderType;
+  customerId?: string | null;
+  notes?: string;
+  fulfilment?: OrderFulfilment | null;
+  items?: OrderItemInput[];
+};
+
 export type Transaction = {
   id: string;
   receiptNumber: string;
@@ -194,6 +233,8 @@ export type Transaction = {
     unitPrice: number;
     discount: number;
     lineTotal: number;
+    optionIds?: string[];
+    notes?: string;
   }[];
   subtotal: number;
   discount: number;
@@ -204,6 +245,13 @@ export type Transaction = {
   payments: Payment[];
   notes?: string;
   createdAt: string;
+  orderNumber?: string;
+  orderType?: OrderType;
+  orderStatus?: OrderStatus;
+  fulfilment?: OrderFulfilment;
+  firedAt?: string;
+  readyAt?: string;
+  servedAt?: string;
 };
 
 export type PaymentMethod = { id: string; name: string; type: string; active: boolean };

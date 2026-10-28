@@ -12,6 +12,7 @@ import {
   mockModifierCategoryAssignments,
   mockModifierGroups,
   mockMovements,
+  mockOpenOrders,
   mockOutlets,
   mockPaymentMethods,
   mockProductDayparts,
@@ -33,6 +34,7 @@ import type {
   IngredientMovement,
   InventoryMovement,
   ModifierGroup,
+  OrderType,
   Outlet,
   PaymentMethod,
   Product,
@@ -67,6 +69,7 @@ export const mockDb: {
   employees: Employee[];
   purchaseOrders: PurchaseOrder[];
   transactions: Transaction[];
+  orders: Transaction[];
   movements: InventoryMovement[];
   modifierGroups: ModifierGroup[];
   modifierAssignments: Record<string, string[]>;
@@ -105,6 +108,11 @@ export const mockDb: {
     items: transaction.items.map((item) => ({ ...item })),
     payments: transaction.payments.map((payment) => ({ ...payment })),
   })),
+  orders: mockOpenOrders.map((order) => ({
+    ...order,
+    items: order.items.map((item) => ({ ...item })),
+    payments: order.payments.map((payment) => ({ ...payment })),
+  })),
   movements: mockMovements.map((movement) => ({ ...movement })),
   modifierGroups: mockModifierGroups.map(cloneGroup),
   modifierAssignments: Object.fromEntries(
@@ -134,6 +142,29 @@ let counter = 0;
 export function mockId(prefix: string) {
   counter += 1;
   return `${prefix}-${Date.now().toString(36)}-${counter}`;
+}
+
+const ORDER_PREFIX: Record<OrderType, string> = {
+  dine_in: "DI",
+  takeaway: "TA",
+  delivery: "DL",
+  pickup: "PU",
+};
+
+/** Mirrors the backend order-number format: OUTLET-TYPE-YYYYMMDD-###. */
+export function mockNextOrderNumber(outletId: string, orderType: OrderType, at = new Date()) {
+  const outlet = mockDb.outlets.find((entry) => entry.id === outletId);
+  const code = (outlet?.code || outlet?.name || "OUT")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 8);
+  const stamp = (() => {
+    const date = new Date(at);
+    return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}`;
+  })();
+  const prefix = `${code}-${ORDER_PREFIX[orderType]}-${stamp}-`;
+  const used = mockDb.orders.filter((order) => order.orderNumber?.startsWith(prefix)).length;
+  return `${prefix}${String(used + 1).padStart(3, "0")}`;
 }
 
 export function mockProduct(id: string) {

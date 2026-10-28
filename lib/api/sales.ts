@@ -1,7 +1,7 @@
 import { format } from "date-fns";
 import { apiRequest, USE_MOCK_API } from "./client";
-import { adjustMockStock, consumeMockIngredients, mockDb, mockId, mockLinePrice, mockProduct, reverseMockIngredients } from "./mock-db";
-import type { Paginated, Transaction } from "./types";
+import { adjustMockStock, consumeMockIngredients, mockDb, mockId, mockLinePrice, mockNextOrderNumber, mockProduct, reverseMockIngredients } from "./mock-db";
+import type { OrderFulfilment, OrderType, Paginated, Transaction } from "./types";
 
 export function mapSale(sale: any): Transaction {
   const payments = (sale.payments ?? []).map((payment: any) => ({
@@ -43,6 +43,8 @@ export function mapSale(sale: any): Transaction {
       unitPrice: Number(item.unit_price ?? 0),
       discount: Number(item.discount_amount ?? 0),
       lineTotal: Number(item.line_total ?? 0),
+      optionIds: Array.isArray(item.option_ids) ? item.option_ids.map(String) : [],
+      notes: item.notes ?? undefined,
     })),
     subtotal: Number(sale.subtotal ?? 0),
     discount: Number(sale.discount_amount ?? 0),
@@ -53,6 +55,21 @@ export function mapSale(sale: any): Transaction {
     payments,
     notes: sale.notes ?? undefined,
     createdAt: sale.created_at ?? new Date().toISOString(),
+    orderNumber: sale.order_number ?? undefined,
+    orderType: sale.order_type ?? undefined,
+    orderStatus: sale.order_status ?? undefined,
+    fulfilment: sale.fulfilment
+      ? {
+          contactName: sale.fulfilment.contact_name ?? undefined,
+          contactPhone: sale.fulfilment.contact_phone ?? undefined,
+          address: sale.fulfilment.address ?? undefined,
+          scheduledAt: sale.fulfilment.scheduled_at ?? undefined,
+          instructions: sale.fulfilment.instructions ?? undefined,
+        }
+      : undefined,
+    firedAt: sale.fired_at ?? undefined,
+    readyAt: sale.ready_at ?? undefined,
+    servedAt: sale.served_at ?? undefined,
   };
 }
 
@@ -185,12 +202,15 @@ export async function checkout(request: {
   outletId: string;
   cashierId: string;
   customerId?: string;
-  items: { productId: string; variantId?: string; discount?: number; quantity: number; optionIds?: string[] }[];
+  items: { productId: string; variantId?: string; discount?: number; quantity: number; optionIds?: string[]; notes?: string }[];
   cartDiscount?: number;
   notes?: string;
   idempotencyKey: string;
   paymentMethod?: string;
+  orderType?: OrderType;
+  fulfilment?: OrderFulfilment;
 }): Promise<Transaction> {
+  const orderType = request.orderType ?? "takeaway";
   if (USE_MOCK_API) {
     const taxRate = mockDb.taxRates.find((rate) => rate.isDefault && rate.isActive);
     const rate = taxRate?.rate ?? 0;
@@ -223,6 +243,7 @@ export async function checkout(request: {
     const method = request.paymentMethod ?? "Cash";
     const now = new Date();
     const sequence = mockDb.transactions.length + 1;
+    const orderNumber = mockNextOrderNumber(request.outletId, orderType, now);
     const transaction: Transaction = {
       id: mockId("tx"),
       receiptNumber: `R-${format(now, "yyyyMMdd")}-${String(sequence).padStart(4, "0")}`,
@@ -250,6 +271,10 @@ export async function checkout(request: {
       ],
       notes: request.notes,
       createdAt: now.toISOString(),
+      orderNumber,
+      orderType,
+      orderStatus: "completed",
+      fulfilment: request.fulfilment,
     };
     mockDb.transactions = [transaction, ...mockDb.transactions];
     items.forEach((item) => {
@@ -284,12 +309,25 @@ export async function checkout(request: {
     customer_id: request.customerId ? Number(request.customerId) : null,
     notes: request.notes,
     idempotency_key: request.idempotencyKey,
+    order_type: orderType,
+    ...(request.fulfilment
+      ? {
+          fulfilment: {
+            contact_name: request.fulfilment.contactName,
+            contact_phone: request.fulfilment.contactPhone,
+            address: request.fulfilment.address,
+            scheduled_at: request.fulfilment.scheduledAt,
+            instructions: request.fulfilment.instructions,
+          },
+        }
+      : {}),
     items: request.items.map((item) => ({
       product_id: Number(item.productId),
       product_variant_id: item.variantId ? Number(item.variantId) : null,
       quantity: item.quantity,
       discount_amount: item.discount ?? 0,
       option_ids: item.optionIds?.map(Number) ?? [],
+      notes: item.notes,
     })),
   };
   const sale = await apiRequest<any>("/sales", {

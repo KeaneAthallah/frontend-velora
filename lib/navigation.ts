@@ -48,6 +48,13 @@ export const navGroups: NavGroup[] = [
         description: "Open the point of sale",
       },
       {
+        label: "Orders",
+        href: "/orders",
+        icon: ClipboardList,
+        permission: "orders.view",
+        description: "Open tabs and the kitchen queue",
+      },
+      {
         label: "Transactions",
         href: "/transactions",
         icon: Receipt,
@@ -197,6 +204,7 @@ export function navTrail(pathname: string): { label: string; href?: string }[] {
 export function defaultRoute(has: (permission: string) => boolean) {
   if (has("reports.view")) return "/";
   if (has("sales.create")) return "/sales";
+  if (has("orders.view")) return "/orders";
   if (has("sales.view")) return "/transactions";
   if (has("products.view")) return "/products";
   if (has("inventory.view")) return "/inventory";

@@ -29,6 +29,7 @@ import {
   Button,
   ChipButton,
   EmptyState,
+  Field,
   InfoTip,
   Input,
   Spinner,
@@ -41,14 +42,23 @@ import { getMenu } from "@/lib/api/menu";
 import { listPaymentMethods } from "@/lib/api/business";
 import { listTaxRates } from "@/lib/api/tax";
 import { checkout } from "@/lib/api/sales";
+import { checkoutOrder, createOrder, getOrder, updateOrder } from "@/lib/api/orders";
 import { listCustomers } from "@/lib/api/customers";
 import { stockByOutlet } from "@/lib/api/inventory";
-import type { Customer, ModifierGroup, Product, TaxRate, Transaction } from "@/lib/api/types";
+import type {
+  Customer,
+  ModifierGroup,
+  OrderFulfilment,
+  OrderType,
+  Product,
+  TaxRate,
+  Transaction,
+} from "@/lib/api/types";
 import { formatCurrency, formatNumber } from "@/lib/formatting/currency";
 import { initials } from "@/components/ui/primitives";
 import { useBusiness } from "@/lib/business/context";
 import { useAuth, usePermissions } from "@/lib/auth/auth-context";
-import { useDebouncedValue } from "@/lib/use-debounced";
+import { useDebouncedValue, useSearchParamState, replaceSearchParam } from "@/lib/use-debounced";
 
 type CartLine = {
   key: string;
@@ -101,6 +111,20 @@ const METHOD_ICON: Record<string, React.ReactNode> = {
   credit_card: <Wallet aria-hidden="true" />,
 };
 
+const ORDER_TYPES: { value: OrderType; label: string }[] = [
+  { value: "dine_in", label: "Dine in" },
+  { value: "takeaway", label: "Takeaway" },
+  { value: "delivery", label: "Delivery" },
+  { value: "pickup", label: "Pickup" },
+];
+
+const EMPTY_FULFILMENT: OrderFulfilment = {
+  contactName: "",
+  contactPhone: "",
+  address: "",
+  instructions: "",
+};
+
 function cartStorageKey(outletId: string | null) {
   return `velora_pos_cart_${outletId ?? "default"}`;
 }
@@ -149,12 +173,18 @@ export default function SalesPage() {
   const [paymentMethod, setPaymentMethod] = React.useState("cash");
   const [success, setSuccess] = React.useState<Transaction | null>(null);
   const [clearOpen, setClearOpen] = React.useState(false);
-  const [chargeError, setChargeError] = React.useState<string | null>(null);
+  const [actionError, setActionError] = React.useState<string | null>(null);
   const [picker, setPicker] = React.useState<{ product: Product; groups: ModifierGroup[] } | null>(null);
+  const [orderType, setOrderType] = React.useState<OrderType>("dine_in");
+  const [fulfilment, setFulfilment] = React.useState<OrderFulfilment>(EMPTY_FULFILMENT);
+  const [resumedOrder, setResumedOrder] = React.useState<Transaction | null>(null);
+  const [orderParam, setOrderParam, orderParamReady] = useSearchParamState("order");
 
   const searchRef = React.useRef<HTMLInputElement>(null);
   const checkoutKeyRef = React.useRef<string | null>(null);
+  const saveKeyRef = React.useRef<string | null>(null);
   const loadedKeyRef = React.useRef<string | null>(null);
+  const hydratedOrderRef = React.useRef<string | null>(null);
 
   const currency = session?.business.currency ?? "IDR";
 
@@ -168,6 +198,9 @@ export default function SalesPage() {
 
   React.useEffect(() => {
     if (!cartLoaded) return;
+    // A resumed open order is owned by the server; do not leak it into the
+    // register's saved cart, or a later visit would reopen stale lines.
+    if (resumedOrder) return;
     const key = cartStorageKey(outletId);
     if (loadedKeyRef.current !== key) return;
     try {
@@ -175,7 +208,7 @@ export default function SalesPage() {
     } catch {
       /* Private browsing storage may be unavailable; the register still works in memory. */
     }
-  }, [cart, cartLoaded, outletId]);
+  }, [cart, cartLoaded, outletId, resumedOrder]);
 
   React.useEffect(() => {
     checkoutKeyRef.current = null;
@@ -222,6 +255,51 @@ export default function SalesPage() {
     enabled: has("sales.create"),
     staleTime: 60_000,
   });
+
+  const resumeQuery = useQuery({
+    queryKey: ["pos-order", orderParam],
+    queryFn: () => getOrder(orderParam),
+    enabled: orderParamReady && Boolean(orderParam) && has("sales.create"),
+    staleTime: 0,
+    retry: 1,
+  });
+
+  React.useEffect(() => {
+    const order = resumeQuery.data;
+    if (!order || hydratedOrderRef.current === order.id) return;
+    hydratedOrderRef.current = order.id;
+    setResumedOrder(order);
+    setOrderType(order.orderType ?? "dine_in");
+    setFulfilment({ ...EMPTY_FULFILMENT, ...(order.fulfilment ?? {}) });
+    setCustomer(
+      order.customerId
+        ? {
+            id: order.customerId,
+            name: order.customerName ?? "Customer",
+            phone: "",
+            loyaltyPoints: 0,
+            createdAt: order.createdAt,
+          }
+        : null
+    );
+    setCart(
+      order.items
+        .filter((item) => item.productId)
+        .map((item) => ({
+          key: lineKey(item.productId!, item.optionIds ?? []),
+          productId: item.productId!,
+          optionIds: item.optionIds ?? [],
+          name: item.name,
+          sku: item.sku,
+          unit: "pcs",
+          basePrice: item.unitPrice,
+          unitPrice: item.unitPrice,
+          quantity: item.quantity,
+          trackInventory: false,
+          stock: Number.MAX_SAFE_INTEGER,
+        }))
+    );
+  }, [resumeQuery.data]);
 
   const stockMap = React.useMemo(
     () => new Map((stockQuery.data ?? []).map((row) => [row.productId, row.stock])),
@@ -311,11 +389,62 @@ export default function SalesPage() {
   const itemCount = cart.reduce((sum, line) => sum + line.quantity, 0);
   const selectedMethod = methodsQuery.data?.find((method) => method.type === paymentMethod);
 
+  const fulfillmentFilled = Boolean(
+    fulfilment.contactName?.trim() ||
+      fulfilment.contactPhone?.trim() ||
+      fulfilment.address?.trim() ||
+      fulfilment.instructions?.trim()
+  );
+  const deliveryInvalid =
+    orderType === "delivery" && (!fulfilment.contactPhone?.trim() || !fulfilment.address?.trim());
+
+  const cleanFulfilment = (): OrderFulfilment | undefined => {
+    if (!fulfillmentFilled) return undefined;
+    return {
+      contactName: fulfilment.contactName?.trim() || undefined,
+      contactPhone: fulfilment.contactPhone?.trim() || undefined,
+      address: fulfilment.address?.trim() || undefined,
+      instructions: fulfilment.instructions?.trim() || undefined,
+    };
+  };
+
+  const orderItems = () =>
+    cart.map((line) => ({
+      productId: line.productId,
+      quantity: line.quantity,
+      discount: 0,
+      optionIds: line.optionIds,
+    }));
+
+  const exitResume = () => {
+    setResumedOrder(null);
+    setOrderParam("");
+    replaceSearchParam("order", "");
+    setCart([]);
+    setCustomer(null);
+    setFulfilment(EMPTY_FULFILMENT);
+    setOrderType("dine_in");
+    checkoutKeyRef.current = null;
+    saveKeyRef.current = null;
+  };
+
   const mutation = useMutation({
     mutationFn: async () => {
       if (!outletId || !session) throw new Error("A cashier and outlet are required");
       if (!cart.length) throw new Error("Add at least one item to the order");
       if (!paymentMethod) throw new Error("Choose a payment method");
+      if (deliveryInvalid) throw new Error("Delivery orders need a contact phone and address");
+
+      if (resumedOrder) {
+        const updated = await updateOrder(resumedOrder.id, {
+          orderType,
+          fulfilment: cleanFulfilment() ?? null,
+          customerId: customer?.id ?? null,
+          items: orderItems(),
+        });
+        return checkoutOrder(updated.id, { paymentMethod });
+      }
+
       if (!checkoutKeyRef.current) {
         checkoutKeyRef.current =
           typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -326,14 +455,11 @@ export default function SalesPage() {
         outletId,
         cashierId: session.user.id,
         customerId: customer?.id,
-        items: cart.map((line) => ({
-          productId: line.productId,
-          quantity: line.quantity,
-          discount: 0,
-          optionIds: line.optionIds,
-        })),
+        items: orderItems(),
         idempotencyKey: checkoutKeyRef.current,
         paymentMethod,
+        orderType,
+        fulfilment: cleanFulfilment(),
       });
     },
     onSuccess: (transaction) => {
@@ -341,8 +467,13 @@ export default function SalesPage() {
       setSuccess(transaction);
       setCart([]);
       setCustomer(null);
+      setResumedOrder(null);
+      setOrderParam("");
+      replaceSearchParam("order", "");
+      setFulfilment(EMPTY_FULFILMENT);
       checkoutKeyRef.current = null;
-      setChargeError(null);
+      saveKeyRef.current = null;
+      setActionError(null);
       if (pending) {
         push({
           title: "Sale recorded - payment not recorded",
@@ -357,6 +488,7 @@ export default function SalesPage() {
         });
       }
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["reports"] });
       queryClient.invalidateQueries({ queryKey: ["inventory"] });
@@ -365,7 +497,47 @@ export default function SalesPage() {
       window.setTimeout(() => searchRef.current?.focus(), 100);
     },
     onError: (error) => {
-      setChargeError(error instanceof Error ? error.message : "The sale could not be completed");
+      setActionError(error instanceof Error ? error.message : "The sale could not be completed");
+    },
+  });
+
+  const saveOrderMutation = useMutation({
+    mutationFn: async () => {
+      if (!outletId) throw new Error("Choose an outlet before saving the order");
+      if (!cart.length) throw new Error("Add at least one item to the order");
+      if (deliveryInvalid) throw new Error("Delivery orders need a contact phone and address");
+      if (!saveKeyRef.current) {
+        saveKeyRef.current =
+          typeof crypto !== "undefined" && "randomUUID" in crypto
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      }
+      return createOrder({
+        outletId,
+        orderType,
+        customerId: customer?.id,
+        items: orderItems(),
+        fulfilment: cleanFulfilment(),
+        idempotencyKey: saveKeyRef.current,
+      });
+    },
+    onSuccess: (order) => {
+      push({
+        title: "Order saved",
+        description: `${order.orderNumber ?? order.receiptNumber} is waiting on the order board.`,
+        variant: "success",
+      });
+      setCart([]);
+      setCustomer(null);
+      setFulfilment(EMPTY_FULFILMENT);
+      setOrderType("dine_in");
+      setActionError(null);
+      saveKeyRef.current = null;
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      window.setTimeout(() => searchRef.current?.focus(), 100);
+    },
+    onError: (error) => {
+      setActionError(error instanceof Error ? error.message : "The order could not be saved");
     },
   });
 
@@ -481,14 +653,24 @@ export default function SalesPage() {
   return (
     <>
       <PageHeader
-        eyebrow={outlet?.name ?? "Register"}
-        title="New sale"
-        description="Build the order, attach a customer, and take payment. Stock and totals update as you go."
+        eyebrow={resumedOrder ? "Editing open order" : (outlet?.name ?? "Register")}
+        title={resumedOrder ? (resumedOrder.orderNumber ?? "Open order") : "New sale"}
+        description={
+          resumedOrder
+            ? "Add or remove items, then charge the guest. Stock moves when the order is finalised."
+            : "Build the order, choose how it is served, and take payment. Stock and totals update as you go."
+        }
         actions={
           <>
-            <Link href="/transactions" className="btn btn--secondary btn--sm">
-              Transactions
-            </Link>
+            {has("orders.view") ? (
+              <Link href="/orders" className="btn btn--secondary btn--sm">
+                Orders
+              </Link>
+            ) : (
+              <Link href="/transactions" className="btn btn--secondary btn--sm">
+                Transactions
+              </Link>
+            )}
             <Button
               variant="secondary"
               className="pos__mobile-order"
@@ -503,15 +685,15 @@ export default function SalesPage() {
         }
       />
 
-      {chargeError ? (
+      {actionError ? (
         <div className="alert alert--danger" role="alert">
           <div>
-            <b>Payment could not be completed.</b>
+            <b>That action could not be completed.</b>
             <p className="hint" style={{ margin: "3px 0 0", color: "inherit" }}>
-              {chargeError}
+              {actionError}
             </p>
           </div>
-          <button type="button" className="icon-btn" onClick={() => setChargeError(null)} aria-label="Dismiss error">
+          <button type="button" className="icon-btn" onClick={() => setActionError(null)} aria-label="Dismiss error">
             <X aria-hidden="true" />
           </button>
         </div>
@@ -691,7 +873,7 @@ export default function SalesPage() {
                 {itemCount ? <Badge tone="brand">{itemCount}</Badge> : null}
               </div>
               <p className="hint" style={{ marginTop: 2 }}>
-                {outlet?.name ?? "Selected outlet"}
+                {resumedOrder?.orderNumber ?? outlet?.name ?? "Selected outlet"}
               </p>
             </div>
             {cart.length ? (
@@ -702,7 +884,97 @@ export default function SalesPage() {
             ) : null}
           </div>
 
-          <div style={{ padding: "0 15px 12px" }}>
+          <div style={{ padding: "12px 15px 0" }}>
+            <div className="eyebrow" style={{ marginBottom: 6 }}>
+              Order type
+            </div>
+            <div className="chips" role="radiogroup" aria-label="Order type">
+              {ORDER_TYPES.map((type) => (
+                <ChipButton
+                  key={type.value}
+                  active={orderType === type.value}
+                  onClick={() => setOrderType(type.value)}
+                  aria-label={type.label}
+                >
+                  {type.label}
+                </ChipButton>
+              ))}
+            </div>
+
+            {resumedOrder ? (
+              <div className="alert alert--warning" role="status" style={{ marginTop: 10 }}>
+                <div>
+                  <b>Editing open order</b>
+                  <p className="hint" style={{ margin: "3px 0 0", color: "inherit" }}>
+                    {resumedOrder.orderNumber} · {resumedOrder.items.length} lines.{" "}
+                    <button type="button" className="btn btn--link" onClick={exitResume} style={{ fontSize: 11 }}>
+                      Start a new sale instead
+                    </button>
+                  </p>
+                </div>
+              </div>
+            ) : null}
+
+            {orderType === "delivery" || fulfilment.contactPhone || fulfilment.address ? (
+              <div className="stack-sm" style={{ marginTop: 12 }}>
+                {orderType === "delivery" ? (
+                  <p className="hint" style={{ margin: 0 }}>
+                    Delivery needs a contact phone and address. The kitchen sees these details on the order board.
+                  </p>
+                ) : null}
+                <Field label="Recipient" htmlFor="fulfilment-name">
+                  <Input
+                    id="fulfilment-name"
+                    value={fulfilment.contactName ?? ""}
+                    onChange={(event) => setFulfilment((current) => ({ ...current, contactName: event.target.value }))}
+                    placeholder="Name on the order"
+                    autoComplete="off"
+                  />
+                </Field>
+                <Field
+                  label="Phone"
+                  htmlFor="fulfilment-phone"
+                  required={orderType === "delivery"}
+                  error={deliveryInvalid && !fulfilment.contactPhone?.trim() ? "Add a contact phone" : undefined}
+                >
+                  <Input
+                    id="fulfilment-phone"
+                    type="tel"
+                    inputMode="tel"
+                    value={fulfilment.contactPhone ?? ""}
+                    onChange={(event) => setFulfilment((current) => ({ ...current, contactPhone: event.target.value }))}
+                    placeholder="08xx xxxx xxxx"
+                    autoComplete="off"
+                  />
+                </Field>
+                <Field
+                  label="Address"
+                  htmlFor="fulfilment-address"
+                  required={orderType === "delivery"}
+                  error={deliveryInvalid && !fulfilment.address?.trim() ? "Add a delivery address" : undefined}
+                >
+                  <Input
+                    id="fulfilment-address"
+                    value={fulfilment.address ?? ""}
+                    onChange={(event) => setFulfilment((current) => ({ ...current, address: event.target.value }))}
+                    placeholder="Street, building, landmark"
+                    autoComplete="off"
+                  />
+                </Field>
+                <Field label="Instructions" htmlFor="fulfilment-notes" hint="Optional, shown to the kitchen and driver.">
+                  <Input
+                    id="fulfilment-notes"
+                    value={fulfilment.instructions ?? ""}
+                    onChange={(event) => setFulfilment((current) => ({ ...current, instructions: event.target.value }))}
+                    placeholder="Leave at the lobby"
+                    autoComplete="off"
+                  />
+                </Field>
+              </div>
+            ) : null}
+          </div>
+
+          <div style={{ padding: "12px 15px" }}>
             {has("customers.view") ? (
               <button
                 type="button"
@@ -863,17 +1135,40 @@ export default function SalesPage() {
               size="lg"
               block
               loading={mutation.isPending}
-              disabled={!cart.length || !outletId || !selectedMethod || Boolean(taxQuery.isLoading)}
+              disabled={
+                !cart.length ||
+                !outletId ||
+                !selectedMethod ||
+                deliveryInvalid ||
+                Boolean(taxQuery.isLoading)
+              }
               onClick={() => {
-                setChargeError(null);
+                setActionError(null);
                 mutation.mutate();
               }}
             >
               Charge {formatCurrency(total, currency)}
             </Button>
+            {!resumedOrder && has("orders.create") ? (
+              <Button
+                variant="secondary"
+                block
+                loading={saveOrderMutation.isPending}
+                disabled={!cart.length || !outletId || deliveryInvalid}
+                onClick={() => {
+                  setActionError(null);
+                  saveOrderMutation.mutate();
+                }}
+              >
+                Save as open order
+              </Button>
+            ) : null}
             <p className="hint" style={{ margin: 0, textAlign: "center" }}>
-              {itemCount} {itemCount === 1 ? "item" : "items"} ·{" "}
-              {methodsQuery.data?.find((method) => method.type === paymentMethod)?.name ?? "Choose a method"}
+              {deliveryInvalid
+                ? "Add a delivery phone and address before saving or charging."
+                : `${itemCount} ${itemCount === 1 ? "item" : "items"} · ${
+                    methodsQuery.data?.find((method) => method.type === paymentMethod)?.name ?? "Choose a method"
+                  }`}
             </p>
           </div>
         </aside>

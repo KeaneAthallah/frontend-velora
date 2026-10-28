@@ -514,6 +514,143 @@ for (let days = 89; days >= 0; days -= 1) {
 generated.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 export const mockTransactions: Transaction[] = generated;
 
+/* Open orders (draft tabs) that have not been paid for yet. They live in a
+   separate list so the receipt ledger stays clean, mirroring GET /orders. */
+function openOrderLine(productId: string, quantity: number): Transaction["items"][number] {
+  const product = mockProducts.find((item) => item.id === productId)!;
+  return {
+    productId,
+    name: product.name,
+    sku: product.sku,
+    quantity,
+    unitPrice: product.price,
+    discount: 0,
+    lineTotal: product.price * quantity,
+    optionIds: [],
+  };
+}
+
+function makeOpenOrder(input: {
+  id: string;
+  sequence: number;
+  outletIndex: number;
+  type: NonNullable<Transaction["orderType"]>;
+  status: NonNullable<Transaction["orderStatus"]>;
+  minutesAgo: number;
+  lines: [string, number][];
+  notes?: string;
+  fulfilment?: Transaction["fulfilment"];
+  customerIndex?: number;
+}): Transaction {
+  const outlet = mockOutlets[input.outletIndex];
+  const cashier = mockEmployees[0];
+  const customer = input.customerIndex === undefined ? null : mockCustomers[input.customerIndex];
+  const stamp = format(anchor, "yyyyMMdd");
+  const prefix: Record<string, string> = { dine_in: "DI", takeaway: "TA", delivery: "DL", pickup: "PU" };
+  const orderNumber = `${outlet.code}-${prefix[input.type]}-${stamp}-${String(input.sequence).padStart(3, "0")}`;
+  const items = input.lines.map(([productId, quantity]) => openOrderLine(productId, quantity));
+  const subtotal = items.reduce((sum, item) => sum + item.lineTotal, 0);
+  const tax = Math.round(subtotal * (mockTaxRate / 100));
+  const createdAt = new Date(anchor.getTime() - input.minutesAgo * 60_000).toISOString();
+
+  return {
+    id: input.id,
+    receiptNumber: `OPEN-${orderNumber}`,
+    outletId: outlet.id,
+    outletName: outlet.name,
+    cashierId: cashier.userId ?? cashier.id,
+    cashierName: cashier.name,
+    customerId: customer?.id,
+    customerName: customer?.name,
+    items,
+    subtotal,
+    discount: 0,
+    tax,
+    total: subtotal + tax,
+    paymentStatus: "pending",
+    status: "completed",
+    payments: [],
+    notes: input.notes,
+    createdAt,
+    orderNumber,
+    orderType: input.type,
+    orderStatus: input.status,
+    fulfilment: input.fulfilment,
+    firedAt: input.status === "open" ? undefined : createdAt,
+    readyAt: input.status === "ready" || input.status === "served" ? createdAt : undefined,
+    servedAt: input.status === "served" ? createdAt : undefined,
+  };
+}
+
+export const mockOpenOrders: Transaction[] = [
+  makeOpenOrder({
+    id: "ord-1",
+    sequence: 1,
+    outletIndex: 0,
+    type: "dine_in",
+    status: "open",
+    minutesAgo: 4,
+    lines: [["p1", 2], ["p10", 1]],
+    notes: "Table 4 · 2 guests",
+    customerIndex: 0,
+  }),
+  makeOpenOrder({
+    id: "ord-2",
+    sequence: 1,
+    outletIndex: 0,
+    type: "takeaway",
+    status: "in_kitchen",
+    minutesAgo: 9,
+    lines: [["p2", 2], ["p12", 2]],
+    notes: "Oat milk on both",
+  }),
+  makeOpenOrder({
+    id: "ord-3",
+    sequence: 1,
+    outletIndex: 1,
+    type: "dine_in",
+    status: "ready",
+    minutesAgo: 14,
+    lines: [["p9", 1], ["p10", 2]],
+    notes: "Table 2 · no sugar",
+  }),
+  makeOpenOrder({
+    id: "ord-4",
+    sequence: 1,
+    outletIndex: 0,
+    type: "delivery",
+    status: "in_kitchen",
+    minutesAgo: 19,
+    lines: [["p2", 1], ["p12", 3]],
+    fulfilment: {
+      contactName: "Rina",
+      contactPhone: "081234567890",
+      address: "Jl. Kemang Raya No. 8, Jakarta Selatan",
+      instructions: "Leave with the lobby security",
+    },
+  }),
+  makeOpenOrder({
+    id: "ord-5",
+    sequence: 1,
+    outletIndex: 1,
+    type: "takeaway",
+    status: "served",
+    minutesAgo: 27,
+    lines: [["p1", 1], ["p9", 2]],
+    notes: "Paid at the counter",
+  }),
+  makeOpenOrder({
+    id: "ord-6",
+    sequence: 2,
+    outletIndex: 0,
+    type: "dine_in",
+    status: "open",
+    minutesAgo: 1,
+    lines: [["p2", 1]],
+    notes: "Table 7 · 1 guest",
+  }),
+];
+
 export const mockMovements: InventoryMovement[] = [
   { id: "m1", productId: "p1", productName: "Espresso", outletId: "o1", type: "receive", quantity: 100, reason: "PO-2026-0039 received", balanceAfter: 128, createdAt: daysAgo(9, 9, 15), createdBy: "Sari Wulandari" },
   { id: "m2", productId: "p2", productName: "Cappuccino", outletId: "o1", type: "receive", quantity: 80, reason: "PO-2026-0039 received", balanceAfter: 86, createdAt: daysAgo(9, 9, 17), createdBy: "Sari Wulandari" },
