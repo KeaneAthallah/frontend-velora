@@ -7,6 +7,8 @@
 - Menu: getMenu (availability + modifier groups), modifier group/option CRUD, product/category attach + detach, 86/restore, dayparts CRUD, product serving windows
 - Sales/Transactions: list, get, checkout (idempotency key supported, modifier options priced server-side)
 - Inventory: stockByOutlet, adjustStock, listMovements
+- Ingredients: list (with per-outlet quantity/value), create (+opening stock), update, delete/deactivate, stock adjust, balanced ledger
+- Recipes: list (with recipe cost + per-variant cost), get, replace product-level or variant-level BOM; mock checkout consumes ingredients and void restores them
 - Purchasing: listSuppliers, listPurchaseOrders
 - Employees: listEmployees, listRoles
 - Reports: dashboardMetrics
@@ -31,3 +33,5 @@
 - Client-calculated totals are provisional only; checkout returns authoritative totals from the server.
 - The POS fetches `getMenu` only when the member has `menu.view`; otherwise it falls back to `listProducts` with no modifier picker, so cashiers can still sell plain items.
 - Menu back office (`/menu`) gates availability on `menu.availability`, modifiers on `menu.manage`, and dayparts on `menu.dayparts`.
+- Recipes back office (`/recipes`) shows the Recipes tab for `recipes.view` and the Ingredients tab for `ingredients.view`. Editing is gated on `recipes.manage` / `ingredients.manage`. Ingredient adjustments require an active outlet because stock is per outlet.
+- Deleting an ingredient that has recipe lines or stock history fails; deactivate it instead (the API blocks the delete, and the mock mirrors it).

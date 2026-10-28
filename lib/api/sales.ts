@@ -1,6 +1,6 @@
 import { format } from "date-fns";
 import { apiRequest, USE_MOCK_API } from "./client";
-import { adjustMockStock, mockDb, mockId, mockLinePrice, mockProduct } from "./mock-db";
+import { adjustMockStock, consumeMockIngredients, mockDb, mockId, mockLinePrice, mockProduct, reverseMockIngredients } from "./mock-db";
 import type { Paginated, Transaction } from "./types";
 
 export function mapSale(sale: any): Transaction {
@@ -175,6 +175,7 @@ export async function voidTransaction(id: string, reason: string): Promise<void>
         createdBy: transaction.cashierName,
       });
     });
+    reverseMockIngredients(transaction.id, reason);
     return;
   }
   await apiRequest<void>(`/sales/${id}/void`, { method: "POST", body: { reason } });
@@ -264,6 +265,16 @@ export async function checkout(request: {
         createdAt: now.toISOString(),
         createdBy: transaction.cashierName,
       });
+    });
+    request.items.forEach((item) => {
+      consumeMockIngredients(
+        item.productId,
+        item.variantId,
+        item.quantity,
+        request.outletId,
+        transaction.id,
+        transaction.receiptNumber
+      );
     });
     return transaction;
   }

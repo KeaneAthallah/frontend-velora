@@ -90,6 +90,63 @@ export type Daypart = {
   productCount: number;
 };
 
+export type Ingredient = {
+  id: string;
+  name: string;
+  sku?: string;
+  unit: string;
+  costPerUnit: number;
+  reorderLevel: number;
+  trackInventory: boolean;
+  active: boolean;
+  quantity: number;
+  stockValue: number;
+  lowStock: boolean;
+};
+
+export type IngredientMovement = {
+  id: string;
+  ingredientId: string;
+  ingredientName?: string;
+  outletId: string;
+  type: "adjustment" | "purchase" | "consumption" | "void" | "wastage" | "expired" | string;
+  quantity: number;
+  unitCost?: number;
+  balanceAfter: number;
+  referenceType?: string;
+  referenceId?: string;
+  reason?: string;
+  actorName?: string;
+  createdAt: string;
+};
+
+export type RecipeLine = {
+  id?: string;
+  productVariantId?: string;
+  ingredientId: string;
+  ingredientName: string;
+  unit: string;
+  unitCost: number;
+  quantity: number;
+  wastePercent: number;
+  effectiveQuantity: number;
+  lineCost: number;
+  notes?: string;
+};
+
+export type RecipeProduct = Product & {
+  recipeItems: RecipeLine[];
+  recipeCost: number;
+  variantCosts: Record<string, number>;
+};
+
+export type RecipeItemInput = {
+  ingredientId: string;
+  quantity: number;
+  wastePercent?: number;
+  notes?: string;
+};
+
 export type CartItem = {
   productId: string;
   variantId?: string;

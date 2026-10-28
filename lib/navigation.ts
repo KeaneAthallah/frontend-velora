@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   BarChart3,
   Boxes,
+  ChefHat,
   ClipboardList,
   LayoutDashboard,
   Package,
@@ -78,6 +79,13 @@ export const navGroups: NavGroup[] = [
         icon: Boxes,
         permission: "inventory.view",
         description: "Stock levels and movements",
+      },
+      {
+        label: "Recipes",
+        href: "/recipes",
+        icon: ChefHat,
+        permissions: ["recipes.view", "ingredients.view"],
+        description: "Ingredient costing and recipes",
       },
       {
         label: "Purchasing",
@@ -192,6 +200,7 @@ export function defaultRoute(has: (permission: string) => boolean) {
   if (has("sales.view")) return "/transactions";
   if (has("products.view")) return "/products";
   if (has("inventory.view")) return "/inventory";
+  if (has("ingredients.view")) return "/recipes";
   if (has("purchasing.view")) return "/purchasing";
   if (has("customers.view")) return "/customers";
   if (has("employees.view")) return "/employees";

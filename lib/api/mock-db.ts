@@ -4,6 +4,9 @@ import {
   mockCustomers,
   mockDayparts,
   mockEmployees,
+  mockIngredientBalances,
+  mockIngredientMovements,
+  mockIngredients,
   mockMenuAvailability,
   mockModifierAssignments,
   mockModifierCategoryAssignments,
@@ -14,6 +17,7 @@ import {
   mockProductDayparts,
   mockProducts,
   mockPurchaseOrders,
+  mockRecipeItems,
   mockRoles,
   mockSuppliers,
   mockTaxRates,
@@ -25,6 +29,8 @@ import type {
   Customer,
   Daypart,
   Employee,
+  Ingredient,
+  IngredientMovement,
   InventoryMovement,
   ModifierGroup,
   Outlet,
@@ -68,6 +74,17 @@ export const mockDb: {
   dayparts: Daypart[];
   productDayparts: Record<string, string[]>;
   menuAvailability: Record<string, { available: boolean; reason?: string }>;
+  ingredients: Ingredient[];
+  recipeItems: {
+    id: string;
+    productId: string;
+    productVariantId?: string;
+    ingredientId: string;
+    quantity: number;
+    wastePercent: number;
+  }[];
+  ingredientBalances: Record<string, number>;
+  ingredientMovements: IngredientMovement[];
 } = {
   business: { ...mockBusiness },
   outlets: mockOutlets.map((outlet) => ({ ...outlet })),
@@ -101,6 +118,10 @@ export const mockDb: {
     Object.entries(mockProductDayparts).map(([productId, ids]) => [productId, [...ids]])
   ),
   menuAvailability: { ...mockMenuAvailability },
+  ingredients: mockIngredients.map((ingredient) => ({ ...ingredient })),
+  recipeItems: mockRecipeItems.map((item) => ({ ...item })),
+  ingredientBalances: { ...mockIngredientBalances },
+  ingredientMovements: mockIngredientMovements.map((movement) => ({ ...movement })),
 };
 
 // Development-only fixture used by the mock data toggle. `data=worst` swaps
@@ -156,4 +177,95 @@ export function mockLinePrice(productId: string, optionIds: string[] = []) {
     .filter((option) => selected.has(option.id))
     .reduce((sum, option) => sum + option.priceDelta, 0);
   return product.price + delta;
+}
+
+export function mockIngredientBalance(outletId: string, ingredientId: string) {
+  return mockDb.ingredientBalances[`${outletId}:${ingredientId}`] ?? 0;
+}
+
+/** Effective recipe for a product, with variant lines overriding base lines. */
+export function mockRecipeLines(productId: string, variantId?: string) {
+  const base = mockDb.recipeItems.filter((item) => item.productId === productId && !item.productVariantId);
+  const overrides = variantId
+    ? mockDb.recipeItems.filter(
+        (item) => item.productId === productId && item.productVariantId === variantId
+      )
+    : [];
+
+  const resolved = new Map<string, (typeof mockDb.recipeItems)[number]>();
+  for (const item of base) resolved.set(item.ingredientId, item);
+  for (const item of overrides) resolved.set(item.ingredientId, item);
+
+  return [...resolved.values()].map((item) => {
+    const ingredient = mockDb.ingredients.find((entry) => entry.id === item.ingredientId);
+    const effective = item.quantity * (1 + (item.wastePercent ?? 0) / 100);
+    const unitCost = ingredient?.costPerUnit ?? 0;
+    return { item, ingredient, effective, lineCost: effective * unitCost };
+  });
+}
+
+export function mockRecipeCost(productId: string, variantId?: string) {
+  return mockRecipeLines(productId, variantId).reduce((sum, line) => sum + line.lineCost, 0);
+}
+
+/** Deduct ingredient stock for a mock sale and log movement rows. */
+export function consumeMockIngredients(
+  productId: string,
+  variantId: string | undefined,
+  quantity: number,
+  outletId: string,
+  referenceId: string,
+  referenceLabel: string
+) {
+  for (const line of mockRecipeLines(productId, variantId)) {
+    if (!line.ingredient?.trackInventory) continue;
+    const key = `${outletId}:${line.ingredient.id}`;
+    const consumed = line.effective * quantity;
+    const balance = Math.max(0, (mockDb.ingredientBalances[key] ?? 0) - consumed);
+    mockDb.ingredientBalances[key] = Number(balance.toFixed(4));
+    mockDb.ingredientMovements.unshift({
+      id: mockId("im"),
+      ingredientId: line.ingredient.id,
+      ingredientName: line.ingredient.name,
+      outletId,
+      type: "consumption",
+      quantity: Number((-consumed).toFixed(4)),
+      unitCost: line.ingredient.costPerUnit,
+      balanceAfter: mockDb.ingredientBalances[key],
+      referenceType: "sale",
+      referenceId,
+      reason: `Sale ${referenceLabel}`,
+      createdAt: new Date().toISOString(),
+    });
+  }
+}
+
+/** Restore ingredient stock when a mock sale is voided. */
+export function reverseMockIngredients(referenceId: string, reason: string) {
+  const consumed = mockDb.ingredientMovements.filter(
+    (movement) =>
+      movement.referenceType === "sale" &&
+      movement.referenceId === referenceId &&
+      movement.type === "consumption"
+  );
+
+  for (const movement of consumed) {
+    const key = `${movement.outletId}:${movement.ingredientId}`;
+    const restored = Math.abs(movement.quantity);
+    mockDb.ingredientBalances[key] = Number(((mockDb.ingredientBalances[key] ?? 0) + restored).toFixed(4));
+    mockDb.ingredientMovements.unshift({
+      id: mockId("im"),
+      ingredientId: movement.ingredientId,
+      ingredientName: movement.ingredientName,
+      outletId: movement.outletId,
+      type: "void",
+      quantity: restored,
+      unitCost: movement.unitCost,
+      balanceAfter: mockDb.ingredientBalances[key],
+      referenceType: "sale",
+      referenceId,
+      reason,
+      createdAt: new Date().toISOString(),
+    });
+  }
 }

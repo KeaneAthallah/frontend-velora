@@ -5,6 +5,8 @@ import type {
   Customer,
   Daypart,
   Employee,
+  Ingredient,
+  IngredientMovement,
   InventoryMovement,
   ModifierGroup,
   Outlet,
@@ -180,6 +182,86 @@ export const mockProductDayparts: Record<string, string[]> = {};
 
 /** `${outletId}:${productId}` -> override. Missing means available. */
 export const mockMenuAvailability: Record<string, { available: boolean; reason?: string }> = {};
+
+export const mockIngredients: Ingredient[] = [
+  { id: "ing1", name: "Espresso beans", sku: "BEAN-ESP", unit: "g", costPerUnit: 120, reorderLevel: 3000, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false },
+  { id: "ing2", name: "Fresh milk", sku: "MILK-FRESH", unit: "ml", costPerUnit: 25, reorderLevel: 5000, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false },
+  { id: "ing3", name: "Oat milk", sku: "MILK-OAT", unit: "ml", costPerUnit: 45, reorderLevel: 2000, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false },
+  { id: "ing4", name: "Vanilla syrup", sku: "SYR-VAN", unit: "ml", costPerUnit: 40, reorderLevel: 500, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false },
+  { id: "ing5", name: "Cup 12oz", sku: "CUP-12", unit: "pcs", costPerUnit: 1200, reorderLevel: 100, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false },
+  { id: "ing6", name: "Ice", sku: "ICE", unit: "g", costPerUnit: 2, reorderLevel: 0, trackInventory: false, active: true, quantity: 0, stockValue: 0, lowStock: false },
+  { id: "ing7", name: "Matcha powder", sku: "TEA-MAT", unit: "g", costPerUnit: 800, reorderLevel: 200, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false },
+  { id: "ing8", name: "Green tea bag", sku: "TEA-GRN", unit: "pcs", costPerUnit: 800, reorderLevel: 50, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false },
+  { id: "ing9", name: "Croissant", sku: "PST-CRO", unit: "pcs", costPerUnit: 9000, reorderLevel: 10, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false },
+  { id: "ing10", name: "Pain au chocolat", sku: "PST-PAC", unit: "pcs", costPerUnit: 10000, reorderLevel: 10, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false },
+  { id: "ing11", name: "Blueberry muffin", sku: "PST-MUF", unit: "pcs", costPerUnit: 7500, reorderLevel: 10, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false },
+  { id: "ing12", name: "House blend bag 250g", sku: "BEAN-HSE-250", unit: "pcs", costPerUnit: 57000, reorderLevel: 6, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false },
+];
+
+export type MockRecipeItem = {
+  id: string;
+  productId: string;
+  productVariantId?: string;
+  ingredientId: string;
+  quantity: number;
+  wastePercent: number;
+};
+
+export const mockRecipeItems: MockRecipeItem[] = [
+  { id: "ri1", productId: "p1", ingredientId: "ing1", quantity: 18, wastePercent: 5 },
+  { id: "ri2", productId: "p1", ingredientId: "ing5", quantity: 1, wastePercent: 0 },
+  { id: "ri3", productId: "p2", ingredientId: "ing1", quantity: 18, wastePercent: 5 },
+  { id: "ri4", productId: "p2", ingredientId: "ing2", quantity: 120, wastePercent: 3 },
+  { id: "ri5", productId: "p2", ingredientId: "ing5", quantity: 1, wastePercent: 0 },
+  { id: "ri6", productId: "p3", ingredientId: "ing1", quantity: 18, wastePercent: 5 },
+  { id: "ri7", productId: "p3", ingredientId: "ing2", quantity: 150, wastePercent: 3 },
+  { id: "ri8", productId: "p3", ingredientId: "ing5", quantity: 1, wastePercent: 0 },
+  { id: "ri9", productId: "p4", ingredientId: "ing1", quantity: 18, wastePercent: 5 },
+  { id: "ri10", productId: "p4", ingredientId: "ing5", quantity: 1, wastePercent: 0 },
+  { id: "ri11", productId: "p5", ingredientId: "ing1", quantity: 22, wastePercent: 5 },
+  { id: "ri12", productId: "p5", ingredientId: "ing5", quantity: 1, wastePercent: 0 },
+  { id: "ri13", productId: "p7", ingredientId: "ing8", quantity: 1, wastePercent: 0 },
+  { id: "ri14", productId: "p7", ingredientId: "ing5", quantity: 1, wastePercent: 0 },
+  { id: "ri15", productId: "p8", ingredientId: "ing7", quantity: 6, wastePercent: 2 },
+  { id: "ri16", productId: "p8", ingredientId: "ing2", quantity: 150, wastePercent: 3 },
+  { id: "ri17", productId: "p8", ingredientId: "ing5", quantity: 1, wastePercent: 0 },
+  { id: "ri18", productId: "p10", ingredientId: "ing9", quantity: 1, wastePercent: 0 },
+  { id: "ri19", productId: "p11", ingredientId: "ing10", quantity: 1, wastePercent: 0 },
+  { id: "ri20", productId: "p13", ingredientId: "ing11", quantity: 1, wastePercent: 0 },
+  { id: "ri21", productId: "p16", ingredientId: "ing12", quantity: 1, wastePercent: 0 },
+];
+
+export const mockIngredientBalances: Record<string, number> = {
+  "o1:ing1": 24000,
+  "o1:ing2": 18000,
+  "o1:ing3": 4000,
+  "o1:ing4": 900,
+  "o1:ing5": 420,
+  "o1:ing7": 800,
+  "o1:ing8": 120,
+  "o1:ing9": 26,
+  "o1:ing10": 18,
+  "o1:ing11": 30,
+  "o1:ing12": 12,
+  "o2:ing1": 8000,
+  "o2:ing2": 6000,
+  "o2:ing3": 1200,
+  "o2:ing4": 300,
+  "o2:ing5": 160,
+  "o2:ing7": 220,
+  "o2:ing8": 40,
+  "o2:ing9": 9,
+  "o2:ing10": 6,
+  "o2:ing11": 12,
+  "o2:ing12": 4,
+};
+
+export const mockIngredientMovements: IngredientMovement[] = [
+  { id: "im1", ingredientId: "ing1", ingredientName: "Espresso beans", outletId: "o1", type: "purchase", quantity: 12000, unitCost: 120, balanceAfter: 24000, reason: "PO-2026-0041 received", actorName: "Sari Wulandari", createdAt: daysAgo(6, 9, 10) },
+  { id: "im2", ingredientId: "ing2", ingredientName: "Fresh milk", outletId: "o1", type: "purchase", quantity: 10000, unitCost: 25, balanceAfter: 18000, reason: "Morning delivery", actorName: "Sari Wulandari", createdAt: daysAgo(2, 7, 40) },
+  { id: "im3", ingredientId: "ing1", ingredientName: "Espresso beans", outletId: "o1", type: "wastage", quantity: -120, unitCost: 120, balanceAfter: 23880, reason: "Dialling in the grinder", actorName: "Bagas Pratama", createdAt: daysAgo(1, 8, 15) },
+  { id: "im4", ingredientId: "ing5", ingredientName: "Cup 12oz", outletId: "o1", type: "adjustment", quantity: -4, unitCost: 1200, balanceAfter: 420, reason: "Damaged sleeves", actorName: "Sari Wulandari", createdAt: daysAgo(1, 17, 5) },
+];
 
 export const mockPaymentMethods: PaymentMethod[] = [
   { id: "pm1", name: "Cash", type: "cash", active: true },
