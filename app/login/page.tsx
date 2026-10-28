@@ -122,19 +122,19 @@ export default function LoginPage() {
               </div>
             </Field>
           </div>
-        </form>
 
-        <Button
-          type="submit"
-          variant="primary"
-          size="lg"
-          block
-          loading={submitting}
-          style={{ marginTop: 24 }}
-        >
-          {submitting ? "Signing in…" : "Sign in"}
-          {!submitting ? <ArrowRight aria-hidden="true" /> : null}
-        </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            size="lg"
+            block
+            loading={submitting}
+            style={{ marginTop: 24 }}
+          >
+            {submitting ? "Signing in…" : "Sign in"}
+            {!submitting ? <ArrowRight aria-hidden="true" /> : null}
+          </Button>
+        </form>
 
         {USE_MOCK_API ? (
           <div className="auth__demo">
