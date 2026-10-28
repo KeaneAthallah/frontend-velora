@@ -54,8 +54,9 @@ import {
   listTaxRates,
   updateTaxRate,
 } from "@/lib/api/tax";
+import { getLoyaltyProgram, updateLoyaltyProgram } from "@/lib/api/loyalty";
 import type { Outlet, PaymentMethod, TaxRate } from "@/lib/api/types";
-import { formatNumber } from "@/lib/formatting/currency";
+import { formatCurrency, formatNumber } from "@/lib/formatting/currency";
 import { useAuth, usePermissions } from "@/lib/auth/auth-context";
 import { useBusiness } from "@/lib/business/context";
 import {
@@ -63,7 +64,7 @@ import {
   useSearchParamState,
 } from "@/lib/use-debounced";
 
-type SectionId = "business" | "outlets" | "tax" | "payments";
+type SectionId = "business" | "outlets" | "tax" | "payments" | "loyalty";
 
 const CURRENCIES = [
   ["IDR", "Indonesian rupiah"],
@@ -107,7 +108,8 @@ export default function SettingsPage() {
       initialSection === "business" ||
       initialSection === "outlets" ||
       initialSection === "tax" ||
-      initialSection === "payments"
+      initialSection === "payments" ||
+      initialSection === "loyalty"
     ) {
       setSection(initialSection);
     }
@@ -118,18 +120,20 @@ export default function SettingsPage() {
   const canViewOutlets = has("outlets.view");
   const canManageOutlets = has("outlets.manage");
   const canManageTax = has("settings.manage");
+  const canViewLoyalty = has("loyalty.view");
 
   const tabs = React.useMemo(
     () => [
       ...(canViewBusiness ? [{ id: "business", label: "Business" }] : []),
       ...(canViewOutlets ? [{ id: "outlets", label: "Outlets" }] : []),
       ...(canManageTax ? [{ id: "tax", label: "Tax" }] : []),
+      ...(canViewLoyalty ? [{ id: "loyalty", label: "Loyalty" }] : []),
       { id: "payments", label: "Payments" },
     ] as { id: SectionId; label: string }[],
-    [canViewBusiness, canViewOutlets, canManageTax]
+    [canViewBusiness, canViewOutlets, canManageTax, canViewLoyalty]
   );
 
-  if (!canViewBusiness && !canViewOutlets && !canManageTax) {
+  if (!canViewBusiness && !canViewOutlets && !canManageTax && !canViewLoyalty) {
     return <AccessDenied permission="businesses.view" />;
   }
 
@@ -146,7 +150,7 @@ export default function SettingsPage() {
     <>
       <PageHeader
         title="Settings"
-        description="Business identity, outlets, tax, and the payment rails used at checkout."
+        description="Business identity, outlets, tax, loyalty, and the payment rails used at checkout."
       />
 
       <Tabs
@@ -164,6 +168,7 @@ export default function SettingsPage() {
           <OutletsSection canManage={canManageOutlets} />
         ) : null}
         {active === "tax" && canManageTax ? <TaxSection /> : null}
+        {active === "loyalty" && canViewLoyalty ? <LoyaltySection /> : null}
         {active === "payments" ? <PaymentsSection /> : null}
       </div>
     </>
@@ -1075,6 +1080,201 @@ function TaxEditor({
         loading={deleteMutation.isPending}
       />
     </>
+  );
+}
+
+function LoyaltySection() {
+  const queryClient = useQueryClient();
+  const { push } = useToast();
+  const { has } = usePermissions();
+  const { session } = useAuth();
+  const currency = session?.business.currency ?? "IDR";
+  const canManage = has("loyalty.manage");
+
+  const query = useQuery({
+    queryKey: ["loyalty-program"],
+    queryFn: getLoyaltyProgram,
+    staleTime: 5 * 60_000,
+  });
+
+  const [form, setForm] = React.useState({
+    isActive: true,
+    spendPerPoint: "10000",
+    redeemValue: "100",
+    minRedeemPoints: "10",
+  });
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    const program = query.data;
+    if (!program) return;
+    setForm({
+      isActive: program.isActive,
+      spendPerPoint:
+        program.pointsPerAmount > 0 ? String(Math.round(1 / program.pointsPerAmount)) : "10000",
+      redeemValue: String(program.redeemValue),
+      minRedeemPoints: String(program.minRedeemPoints),
+    });
+  }, [query.data]);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const spend = Number(form.spendPerPoint);
+      const value = Number(form.redeemValue);
+      const minimum = Number(form.minRedeemPoints);
+
+      if (!Number.isFinite(spend) || spend <= 0) throw new Error("Spend per point must be greater than zero.");
+      if (!Number.isFinite(value) || value < 0) throw new Error("Enter a valid point value.");
+      if (!Number.isFinite(minimum) || minimum < 0) throw new Error("Enter a valid minimum redemption.");
+
+      return updateLoyaltyProgram({
+        isActive: form.isActive,
+        pointsPerAmount: 1 / spend,
+        redeemValue: value,
+        minRedeemPoints: minimum,
+      });
+    },
+    onSuccess: () => {
+      push({
+        title: "Loyalty programme updated",
+        description: "The register uses these rates on the next sale.",
+        variant: "success",
+      });
+      setError(null);
+      void queryClient.invalidateQueries({ queryKey: ["loyalty-program"] });
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "The loyalty programme could not be saved.");
+    },
+  });
+
+  const spend = Number(form.spendPerPoint) || 0;
+  const value = Number(form.redeemValue) || 0;
+  const exampleOrder = 50000;
+  const examplePoints = spend > 0 ? exampleOrder / spend : 0;
+  const exampleWorth = examplePoints * value;
+  const payback = exampleOrder > 0 ? (exampleWorth / exampleOrder) * 100 : 0;
+
+  return (
+    <Card>
+      <CardHeader className="card__head">
+        <div>
+          <h2>Loyalty programme</h2>
+          <p>
+            Points are earned when a sale is completed and redeemed by the cashier at the register. Balances live on
+            the customer record, so a walk-in sale earns nothing.
+          </p>
+        </div>
+      </CardHeader>
+
+      <CardBody>
+        <div style={{ padding: 16 }}>
+          {query.isError ? (
+            <InlineError
+              title="The loyalty programme could not be loaded"
+              error={query.error}
+              onRetry={() => query.refetch()}
+            />
+          ) : query.isLoading ? (
+            <SectionSkeleton />
+          ) : (
+            <form
+              className="stack"
+              style={{ gap: 14, maxWidth: 560 }}
+              onSubmit={(event) => {
+                event.preventDefault();
+                saveMutation.mutate();
+              }}
+            >
+              {error ? <div className="alert alert--warning">{error}</div> : null}
+
+              <Switch
+                checked={form.isActive}
+                disabled={!canManage || saveMutation.isPending}
+                onChange={(event) => setForm((current) => ({ ...current, isActive: event.target.checked }))}
+                label="Earn and redeem points"
+                description="Turning this off stops new points but keeps existing balances."
+              />
+
+              <div className="grid grid-cols-2 gap-4">
+                <Field
+                  label={`Spend per point (${currency})`}
+                  htmlFor="loyalty-spend"
+                  hint="For example 10.000 means one point per 10.000 spent."
+                >
+                  <Input
+                    id="loyalty-spend"
+                    inputMode="decimal"
+                    value={form.spendPerPoint}
+                    disabled={!canManage || saveMutation.isPending}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, spendPerPoint: event.target.value }))
+                    }
+                  />
+                </Field>
+                <Field
+                  label={`Value of one point (${currency})`}
+                  htmlFor="loyalty-value"
+                  hint="What a point is worth when redeemed."
+                >
+                  <Input
+                    id="loyalty-value"
+                    inputMode="decimal"
+                    value={form.redeemValue}
+                    disabled={!canManage || saveMutation.isPending}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, redeemValue: event.target.value }))
+                    }
+                  />
+                </Field>
+              </div>
+
+              <Field
+                label="Minimum points to redeem"
+                htmlFor="loyalty-min"
+                hint="The cashier cannot redeem below this amount."
+              >
+                <Input
+                  id="loyalty-min"
+                  inputMode="decimal"
+                  value={form.minRedeemPoints}
+                  disabled={!canManage || saveMutation.isPending}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, minRedeemPoints: event.target.value }))
+                  }
+                  style={{ maxWidth: 200 }}
+                />
+              </Field>
+
+              <div className="alert alert--info">
+                <Info aria-hidden="true" />
+                <div>
+                  <b>
+                    A {formatCurrency(exampleOrder, currency)} order earns {formatNumber(examplePoints)} points
+                  </b>
+                  <p className="hint" style={{ margin: "3px 0 0", color: "inherit" }}>
+                    Worth {formatCurrency(exampleWorth, currency)} when redeemed ({formatNumber(payback)}% back).
+                    Voiding a sale reverses both the points earned and any points spent.
+                  </p>
+                </div>
+              </div>
+
+              {canManage ? (
+                <div className="row" style={{ justifyContent: "flex-end" }}>
+                  <Button type="submit" variant="primary" loading={saveMutation.isPending}>
+                    Save loyalty settings
+                  </Button>
+                </div>
+              ) : (
+                <p className="hint" style={{ margin: 0 }}>
+                  Your role can view the loyalty programme but not change its rates.
+                </p>
+              )}
+            </form>
+          )}
+        </div>
+      </CardBody>
+    </Card>
   );
 }
 

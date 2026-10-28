@@ -10,6 +10,7 @@ import {
   mockIngredientMovements,
   mockIngredients,
   mockKitchenStations,
+  mockLoyaltyProgram,
   mockMenuAvailability,
   mockModifierAssignments,
   mockModifierCategoryAssignments,
@@ -20,6 +21,7 @@ import {
   mockPaymentMethods,
   mockProductDayparts,
   mockProducts,
+  mockPromotions,
   mockPurchaseOrders,
   mockRecipeItems,
   mockRoles,
@@ -40,11 +42,14 @@ import type {
   InventoryMovement,
   KitchenStation,
   KitchenTicket,
+  LoyaltyProgram,
+  LoyaltyTransaction,
   ModifierGroup,
   OrderType,
   Outlet,
   PaymentMethod,
   Product,
+  Promotion,
   PurchaseOrder,
   Refund,
   Role,
@@ -72,6 +77,10 @@ export const mockDb: {
   paymentMethods: PaymentMethod[];
   taxRates: TaxRate[];
   customers: Customer[];
+  promotions: Promotion[];
+  promotionRedemptions: { id: string; promotionId: string; saleId: string; customerId?: string; amount: number }[];
+  loyaltyProgram: LoyaltyProgram;
+  loyaltyTransactions: LoyaltyTransaction[];
   suppliers: Supplier[];
   roles: Role[];
   employees: Employee[];
@@ -111,6 +120,10 @@ export const mockDb: {
   paymentMethods: mockPaymentMethods.map((method) => ({ ...method })),
   taxRates: mockTaxRates.map((rate) => ({ ...rate })),
   customers: mockCustomers.map((customer) => ({ ...customer })),
+  promotions: mockPromotions.map((promotion) => ({ ...promotion })),
+  promotionRedemptions: [],
+  loyaltyProgram: { ...mockLoyaltyProgram },
+  loyaltyTransactions: [],
   suppliers: mockSuppliers.map((supplier) => ({ ...supplier })),
   roles: mockRoles.map((role) => ({ ...role, permissions: [...role.permissions] })),
   employees: mockEmployees.map((employee) => ({ ...employee, outlets: [...employee.outlets] })),

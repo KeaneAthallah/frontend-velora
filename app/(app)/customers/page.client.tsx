@@ -24,14 +24,16 @@ import { useToast } from "@/components/ui/toast";
 import {
   createCustomer,
   deleteCustomer,
+  getCustomerProfile,
   listCustomers,
   updateCustomer,
   type CustomerInput,
 } from "@/lib/api/customers";
-import type { Customer } from "@/lib/api/types";
-import { formatDate, formatNumber } from "@/lib/formatting/currency";
+import { adjustLoyaltyPoints } from "@/lib/api/loyalty";
+import type { Customer, CustomerProfile, LoyaltyTransaction } from "@/lib/api/types";
+import { formatCurrency, formatDate, formatNumber } from "@/lib/formatting/currency";
 import { initials } from "@/components/ui/primitives";
-import { usePermissions } from "@/lib/auth/auth-context";
+import { useAuth, usePermissions } from "@/lib/auth/auth-context";
 import { useDebouncedValue, useSearchParamState, replaceSearchParam } from "@/lib/use-debounced";
 
 const PAGE_SIZE = 50;
@@ -131,9 +133,16 @@ export default function CustomersPage() {
       header: "Loyalty",
       align: "right",
       cell: (row) => (
-        <Badge tone={row.loyaltyPoints > 0 ? "brand" : "neutral"}>
-          {formatNumber(row.loyaltyPoints)} points
-        </Badge>
+        <div className="stack-sm" style={{ gap: 3, alignItems: "flex-end" }}>
+          <Badge tone={row.loyaltyPoints > 0 ? "brand" : "neutral"}>
+            {formatNumber(row.loyaltyPoints)} points
+          </Badge>
+          {row.totalSpent ? (
+            <span className="hint" style={{ margin: 0 }}>
+              {formatNumber(row.visitsCount ?? 0)} {row.visitsCount === 1 ? "visit" : "visits"}
+            </span>
+          ) : null}
+        </div>
       ),
     },
     {
@@ -266,9 +275,16 @@ export default function CustomersPage() {
                       {row.address || "—"}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
-                      <Badge tone={row.loyaltyPoints > 0 ? "brand" : "neutral"} style={{ marginLeft: "auto" }}>
-                        {formatNumber(row.loyaltyPoints)} points
-                      </Badge>
+                      <div className="stack-sm" style={{ gap: 3, alignItems: "flex-end" }}>
+                        <Badge tone={row.loyaltyPoints > 0 ? "brand" : "neutral"} style={{ marginLeft: "auto" }}>
+                          {formatNumber(row.loyaltyPoints)} points
+                        </Badge>
+                        {row.visitsCount ? (
+                          <span className="hint" style={{ margin: 0 }}>
+                            {formatNumber(row.visitsCount)} {row.visitsCount === 1 ? "visit" : "visits"}
+                          </span>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-gray-500 text-sm">
                       {formatDate(row.createdAt)}
@@ -392,6 +408,13 @@ function CustomerEditor({
   });
   const [errors, setErrors] = React.useState<Record<string, string>>({});
   const [deleteOpen, setDeleteOpen] = React.useState(false);
+
+  const profileQuery = useQuery({
+    queryKey: ["customer-profile", customer?.id],
+    queryFn: () => getCustomerProfile(customer!.id),
+    enabled: open && Boolean(customer),
+    staleTime: 15_000,
+  });
 
   React.useEffect(() => {
     if (!open) return;
@@ -548,12 +571,7 @@ function CustomerEditor({
                 <span className="text-gray-700">{customer?.address || "No address on file"}</span>
               </div>
             </div>
-            <div className="mt-6 p-4" style={{ background: "var(--surface-2)", borderRadius: 8, border: "1px solid var(--border)" }}>
-              <div className="flex items-center justify-between">
-                <span className="text-gray-500 text-sm">Loyalty points</span>
-                <b className="num">{formatNumber(customer?.loyaltyPoints ?? 0)}</b>
-              </div>
-            </div>
+            {customer ? <CustomerLoyaltyCard customer={customer} profile={profileQuery.data} /> : null}
             <p className="text-gray-500 text-sm mt-4">
               Your role can view customer records but not edit them.
             </p>
@@ -644,19 +662,7 @@ function CustomerEditor({
               />
               <p className="text-xs text-gray-500 mt-1">Optional. Existing membership or loyalty identifier, if one is used.</p>
             </div>
-            {customer && (
-              <div className="p-4" style={{ background: "var(--surface-2)", borderRadius: 8, border: "1px solid var(--border)" }}>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-500 text-sm">Loyalty points</span>
-                  <Badge tone={customer.loyaltyPoints > 0 ? "brand" : "neutral"}>
-                    {formatNumber(customer.loyaltyPoints)}
-                  </Badge>
-                </div>
-                <p className="text-xs text-gray-500 mt-2">
-                  Points are earned by the loyalty system; they are not edited here.
-                </p>
-              </div>
-            )}
+            {customer ? <CustomerLoyaltyCard customer={customer} profile={profileQuery.data} /> : null}
           </form>
         )}
       </Sheet>
@@ -675,5 +681,139 @@ function CustomerEditor({
         loading={deleteMutation.isPending}
       />
     </>
+  );
+}
+
+const LEDGER_LABEL: Record<LoyaltyTransaction["type"], string> = {
+  earn: "Earned",
+  redeem: "Redeemed",
+  adjust: "Adjustment",
+  reverse: "Reversal",
+};
+
+function CustomerLoyaltyCard({ customer, profile }: { customer: Customer; profile?: CustomerProfile }) {
+  const { has } = usePermissions();
+  const { session } = useAuth();
+  const { push } = useToast();
+  const queryClient = useQueryClient();
+  const currency = session?.business.currency ?? "IDR";
+  const [points, setPoints] = React.useState("");
+  const [reason, setReason] = React.useState("");
+  const [error, setError] = React.useState<string | null>(null);
+
+  const canAdjust = has("loyalty.manage");
+
+  const adjustMutation = useMutation({
+    mutationFn: async () => {
+      const value = Number(points);
+      if (!points.trim() || !Number.isFinite(value) || value === 0) {
+        throw new Error("Enter a non-zero points adjustment");
+      }
+      return adjustLoyaltyPoints(customer.id, value, reason.trim() || "Manual adjustment");
+    },
+    onSuccess: (updated) => {
+      push({
+        title: "Points adjusted",
+        description: `${updated.name} now has ${formatNumber(updated.loyaltyPoints)} points.`,
+        variant: "success",
+      });
+      setPoints("");
+      setReason("");
+      setError(null);
+      void queryClient.invalidateQueries({ queryKey: ["customers"] });
+      void queryClient.invalidateQueries({ queryKey: ["customer-profile", customer.id] });
+      void queryClient.invalidateQueries({ queryKey: ["pos-customers"] });
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "The points could not be adjusted.");
+    },
+  });
+
+  const ledger = profile?.loyaltyTransactions ?? [];
+
+  return (
+    <div
+      className="p-4"
+      style={{ background: "var(--surface-2)", borderRadius: 8, border: "1px solid var(--border)" }}
+    >
+      <div className="flex items-center justify-between">
+        <span className="text-gray-500 text-sm">Loyalty balance</span>
+        <Badge tone={customer.loyaltyPoints > 0 ? "brand" : "neutral"}>
+          {formatNumber(customer.loyaltyPoints)} points
+        </Badge>
+      </div>
+      <div className="flex items-center justify-between" style={{ marginTop: 6 }}>
+        <span className="text-gray-500 text-sm">Lifetime spend</span>
+        <b className="num">{formatCurrency(customer.totalSpent ?? 0, currency)}</b>
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-gray-500 text-sm">Visits</span>
+        <b className="num">{formatNumber(customer.visitsCount ?? 0)}</b>
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-gray-500 text-sm">Promotions used</span>
+        <b className="num">{formatNumber(profile?.promotionsUsed ?? 0)}</b>
+      </div>
+
+      {ledger.length ? (
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed var(--border)" }}>
+          <div className="eyebrow" style={{ marginBottom: 4 }}>
+            Recent points
+          </div>
+          {ledger.slice(0, 5).map((entry) => (
+            <div key={entry.id} className="flex items-center justify-between" style={{ fontSize: 12 }}>
+              <span className="text-gray-500">
+                {LEDGER_LABEL[entry.type] ?? entry.type} · {formatDate(entry.createdAt)}
+              </span>
+              <b className="num" style={{ color: entry.points < 0 ? "var(--danger, #b42318)" : undefined }}>
+                {entry.points > 0 ? "+" : ""}
+                {formatNumber(entry.points)}
+              </b>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {canAdjust ? (
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed var(--border)" }}>
+          <div className="eyebrow" style={{ marginBottom: 6 }}>
+            Adjust points
+          </div>
+          {error ? <div className="alert alert--warning" style={{ marginBottom: 8 }}>{error}</div> : null}
+          <div className="row" style={{ gap: 6 }}>
+            <Input
+              value={points}
+              onChange={(event) => setPoints(event.target.value.replace(/[^\d.-]/g, ""))}
+              placeholder="+50 or -20"
+              aria-label="Points adjustment"
+              inputMode="decimal"
+              style={{ maxWidth: 110 }}
+            />
+            <Input
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="Reason"
+              aria-label="Reason for the adjustment"
+            />
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={adjustMutation.isPending}
+              disabled={!points.trim()}
+              onClick={() => adjustMutation.mutate()}
+            >
+              Apply
+            </Button>
+          </div>
+          <p className="hint" style={{ margin: "6px 0 0" }}>
+            Points are otherwise earned and spent automatically when a sale is completed.
+          </p>
+        </div>
+      ) : (
+        <p className="text-xs text-gray-500 mt-2">
+          Points are earned by the loyalty system; they are not edited here.
+        </p>
+      )}
+    </div>
   );
 }

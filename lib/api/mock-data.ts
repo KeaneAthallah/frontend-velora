@@ -11,10 +11,12 @@ import type {
   IngredientMovement,
   InventoryMovement,
   KitchenStation,
+  LoyaltyProgram,
   ModifierGroup,
   Outlet,
   PaymentMethod,
   Product,
+  Promotion,
   PurchaseOrder,
   Role,
   Session,
@@ -274,6 +276,58 @@ export const mockPaymentMethods: PaymentMethod[] = [
   { id: "pm5", code: "ewallet", name: "E-Wallet", type: "ewallet", requiresReference: true, active: true, sortOrder: 5 },
   { id: "pm6", code: "transfer", name: "Bank Transfer", type: "transfer", requiresReference: true, active: true, sortOrder: 6 },
 ];
+
+export const mockPromotions: Promotion[] = [
+  {
+    id: "pr1",
+    name: "Coffee o'clock",
+    code: "HEMAT10",
+    description: "10% off the whole order, capped at 25.000.",
+    type: "percentage",
+    value: 10,
+    maxDiscount: 25000,
+    usageLimit: 200,
+    usageCount: 12,
+    startsAt: daysAgo(30, 8, 0),
+    endsAt: daysAgo(-60, 22, 0),
+    active: true,
+    createdAt: daysAgo(30, 8, 0),
+  },
+  {
+    id: "pr2",
+    name: "Happy hour pastry",
+    code: undefined,
+    description: "Automatic 5.000 off every order after 15:00.",
+    type: "fixed",
+    value: 5000,
+    minSpend: 25000,
+    usageCount: 0,
+    active: false,
+    createdAt: daysAgo(21, 9, 0),
+  },
+  {
+    id: "pr3",
+    name: "Grand opening",
+    code: "OPENING25",
+    description: "25% off, limited to the first 50 orders.",
+    type: "percentage",
+    value: 25,
+    maxDiscount: 40000,
+    usageLimit: 50,
+    usageCount: 50,
+    active: true,
+    startsAt: daysAgo(45, 8, 0),
+    endsAt: daysAgo(-10, 22, 0),
+    createdAt: daysAgo(45, 8, 0),
+  },
+];
+
+export const mockLoyaltyProgram: LoyaltyProgram = {
+  isActive: true,
+  pointsPerAmount: 0.0001,
+  redeemValue: 100,
+  minRedeemPoints: 10,
+};
 
 export const mockTaxRates: TaxRate[] = [
   { id: "tr1", name: "PPN", rate: 11, type: "exclusive", isDefault: true, isActive: true },

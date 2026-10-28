@@ -162,10 +162,12 @@ export type CheckoutRequest = {
   outletId: string;
   cashierId: string;
   customerId?: string;
-  items: { productId: string; variantId?: string; quantity: number; discount?: number; optionIds?: string[] }[];
+  items: { productId: string; variantId?: string; quantity: number; discount?: number; optionIds?: string[]; notes?: string }[];
   cartDiscount?: number;
   notes?: string;
   idempotencyKey: string;
+  promotionCode?: string;
+  redeemPoints?: number;
 };
 
 export type Payment = {
@@ -240,6 +242,8 @@ export type CreateOrderRequest = {
   fulfilment?: OrderFulfilment;
   items: OrderItemInput[];
   idempotencyKey?: string;
+  promotionCode?: string;
+  redeemPoints?: number;
 };
 
 export type UpdateOrderRequest = {
@@ -249,6 +253,8 @@ export type UpdateOrderRequest = {
   notes?: string;
   fulfilment?: OrderFulfilment | null;
   items?: OrderItemInput[];
+  promotionCode?: string | null;
+  redeemPoints?: number | null;
 };
 
 export type TableStatus = "available" | "reserved" | "cleaning" | "occupied";
@@ -400,6 +406,12 @@ export type Transaction = {
   firedAt?: string;
   readyAt?: string;
   servedAt?: string;
+  promotionCode?: string;
+  promotionName?: string;
+  promotionDiscount?: number;
+  loyaltyDiscount?: number;
+  loyaltyPointsRedeemed?: number;
+  loyaltyPointsEarned?: number;
 };
 
 export type PaymentMethod = {
@@ -434,8 +446,83 @@ export type Customer = {
   address?: string;
   loyaltyNumber?: string;
   loyaltyPoints: number;
+  totalSpent?: number;
+  visitsCount?: number;
+  lastVisitAt?: string;
+  loyaltyJoinedAt?: string;
   notes?: string;
   createdAt: string;
+};
+
+export type PromotionType = "percentage" | "fixed";
+
+export type Promotion = {
+  id: string;
+  name: string;
+  code?: string;
+  description?: string;
+  type: PromotionType;
+  value: number;
+  minSpend?: number;
+  maxDiscount?: number;
+  usageLimit?: number;
+  usageCount: number;
+  perCustomerLimit?: number;
+  startsAt?: string;
+  endsAt?: string;
+  active: boolean;
+  createdAt?: string;
+};
+
+export type PromotionInput = {
+  name: string;
+  code?: string | null;
+  description?: string;
+  type: PromotionType;
+  value: number;
+  minSpend?: number | null;
+  maxDiscount?: number | null;
+  usageLimit?: number | null;
+  perCustomerLimit?: number | null;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  active: boolean;
+};
+
+export type PromotionPreview = {
+  subtotal: number;
+  discount: number;
+  promotionDiscount: number;
+  promotionName?: string;
+  promotionCode?: string;
+  loyaltyDiscount: number;
+  loyaltyPointsRedeemed: number;
+  tax: number;
+  total: number;
+};
+
+export type LoyaltyProgram = {
+  isActive: boolean;
+  pointsPerAmount: number;
+  redeemValue: number;
+  minRedeemPoints: number;
+};
+
+export type LoyaltyTransaction = {
+  id: string;
+  customerId: string;
+  saleId?: string;
+  type: "earn" | "redeem" | "adjust" | "reverse";
+  points: number;
+  balanceAfter: number;
+  reason?: string;
+  createdAt: string;
+};
+
+export type CustomerProfile = Customer & {
+  sales: Transaction[];
+  loyaltyTransactions: LoyaltyTransaction[];
+  promotionsUsed: number;
 };
 
 export type Supplier = {

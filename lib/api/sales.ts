@@ -2,6 +2,7 @@ import { format } from "date-fns";
 import { apiRequest, USE_MOCK_API } from "./client";
 import { adjustMockStock, consumeMockIngredients, mockDb, mockId, mockLinePrice, mockNextOrderNumber, mockProduct, reverseMockIngredients } from "./mock-db";
 import { buildPaymentBatch, mockRecordPayments, normalizeRefund } from "./payments";
+import { mockFinalizeDiscounts, mockQuoteCart, mockReverseDiscounts } from "./promotions";
 import { mockActiveOrderForTable } from "./tables";
 import type { OrderFulfilment, OrderType, Paginated, PaymentInput, Transaction } from "./types";
 
@@ -79,6 +80,12 @@ export function mapSale(sale: any): Transaction {
     firedAt: sale.fired_at ?? undefined,
     readyAt: sale.ready_at ?? undefined,
     servedAt: sale.served_at ?? undefined,
+    promotionCode: sale.promotion_code ?? undefined,
+    promotionName: sale.promotion?.name ?? undefined,
+    promotionDiscount: Number(sale.promotion_discount ?? 0),
+    loyaltyDiscount: Number(sale.loyalty_discount ?? 0),
+    loyaltyPointsRedeemed: Number(sale.loyalty_points_redeemed ?? 0),
+    loyaltyPointsEarned: Number(sale.loyalty_points_earned ?? 0),
   };
 }
 
@@ -202,6 +209,7 @@ export async function voidTransaction(id: string, reason: string): Promise<void>
       });
     });
     reverseMockIngredients(transaction.id, reason);
+    mockReverseDiscounts(transaction);
     return;
   }
   await apiRequest<void>(`/sales/${id}/void`, { method: "POST", body: { reason } });
@@ -220,6 +228,8 @@ export async function checkout(request: {
   orderType?: OrderType;
   tableId?: string;
   fulfilment?: OrderFulfilment;
+  promotionCode?: string;
+  redeemPoints?: number;
 }): Promise<Transaction> {
   const orderType = request.orderType ?? "takeaway";
   if (USE_MOCK_API) {
@@ -235,9 +245,6 @@ export async function checkout(request: {
       throw new Error("This table already has an open order");
     }
 
-    const taxRate = mockDb.taxRates.find((rate) => rate.isDefault && rate.isActive);
-    const rate = taxRate?.rate ?? 0;
-    const inclusive = taxRate?.type === "inclusive";
     const items = request.items.map((item) => {
       const product = mockProduct(item.productId);
       if (!product) throw new Error("Product not found");
@@ -251,15 +258,20 @@ export async function checkout(request: {
         unitPrice,
         discount: item.discount ?? 0,
         lineTotal,
+        optionIds: item.optionIds ?? [],
+        notes: item.notes,
       };
     });
-    const subtotal = items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
-    const discount = request.cartDiscount ?? 0;
-    const afterDiscount = subtotal - discount;
-    const tax = inclusive
-      ? Math.round(afterDiscount - afterDiscount / (1 + rate / 100))
-      : Math.round(afterDiscount * (rate / 100));
-    const total = inclusive ? afterDiscount : afterDiscount + tax;
+    const quote = mockQuoteCart({
+      items: request.items,
+      promotionCode: request.promotionCode,
+      customerId: request.customerId,
+      redeemPoints: request.redeemPoints,
+    });
+    const subtotal = quote.subtotal;
+    const discount = quote.discount;
+    const tax = quote.tax;
+    const total = quote.total;
     const outlet = mockDb.outlets.find((item) => item.id === request.outletId);
     const cashier = mockDb.employees.find((employee) => employee.userId === request.cashierId) ?? mockDb.employees[0];
     const customer = mockDb.customers.find((item) => item.id === request.customerId);
@@ -295,7 +307,14 @@ export async function checkout(request: {
       tableId: table?.id,
       tableName: table?.name,
       fulfilment: request.fulfilment,
+      promotionCode: quote.promotionCode,
+      promotionName: quote.promotionName,
+      promotionDiscount: quote.promotionDiscount,
+      loyaltyDiscount: quote.loyaltyDiscount,
+      loyaltyPointsRedeemed: quote.loyaltyPointsRedeemed,
+      loyaltyPointsEarned: 0,
     };
+    transaction.loyaltyPointsEarned = mockFinalizeDiscounts(transaction, quote, customer?.id);
     mockDb.transactions = [transaction, ...mockDb.transactions];
     items.forEach((item) => {
       adjustMockStock(item.productId, request.outletId, -item.quantity);
@@ -342,6 +361,8 @@ export async function checkout(request: {
           },
         }
       : {}),
+    ...(request.promotionCode ? { promotion_code: request.promotionCode.trim().toUpperCase() } : {}),
+    ...(request.redeemPoints ? { redeem_points: request.redeemPoints } : {}),
     items: request.items.map((item) => ({
       product_id: Number(item.productId),
       product_variant_id: item.variantId ? Number(item.variantId) : null,
@@ -375,5 +396,5 @@ export async function checkout(request: {
   });
 
   const full = await apiRequest<any>(`/sales/${sale.id}`);
-  return mapSale(full);
+  return mapSale({ ...full, promotion: full.promotion ?? sale.promotion });
 }

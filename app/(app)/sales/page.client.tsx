@@ -41,6 +41,8 @@ import { useToast } from "@/components/ui/toast";
 import { listCategories, listProducts } from "@/lib/api/products";
 import { getMenu } from "@/lib/api/menu";
 import { listPaymentMethods } from "@/lib/api/payments";
+import { previewPromotion } from "@/lib/api/promotions";
+import { getLoyaltyProgram } from "@/lib/api/loyalty";
 import { listTaxRates } from "@/lib/api/tax";
 import { checkout } from "@/lib/api/sales";
 import { checkoutOrder, createOrder, getOrder, updateOrder } from "@/lib/api/orders";
@@ -49,10 +51,12 @@ import { stockByOutlet } from "@/lib/api/inventory";
 import { listFloorPlan } from "@/lib/api/tables";
 import type {
   Customer,
+  LoyaltyProgram,
   ModifierGroup,
   OrderFulfilment,
   OrderType,
   Product,
+  PromotionPreview,
   TaxRate,
   Transaction,
 } from "@/lib/api/types";
@@ -187,6 +191,11 @@ export default function SalesPage() {
   const [cartLoaded, setCartLoaded] = React.useState(false);
   const [customer, setCustomer] = React.useState<Customer | null>(null);
   const [customerOpen, setCustomerOpen] = React.useState(false);
+  const [promoCode, setPromoCode] = React.useState("");
+  const [redeemPoints, setRedeemPoints] = React.useState("");
+  const [discounts, setDiscounts] = React.useState<{ code: string; points: number } | null>(null);
+  const [promoPreview, setPromoPreview] = React.useState<PromotionPreview | null>(null);
+  const [promoError, setPromoError] = React.useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = React.useState("cash");
   const [payReference, setPayReference] = React.useState("");
   const [splitOpen, setSplitOpen] = React.useState(false);
@@ -278,6 +287,14 @@ export default function SalesPage() {
     staleTime: 60_000,
   });
 
+  const loyaltyQuery = useQuery({
+    queryKey: ["loyalty-program"],
+    queryFn: getLoyaltyProgram,
+    enabled: has("sales.create") && has("loyalty.view"),
+    staleTime: 5 * 60_000,
+  });
+  const loyalty: LoyaltyProgram | null = loyaltyQuery.data ?? null;
+
   const tablesQuery = useQuery({
     queryKey: ["floor-plan", outletId, "pos"],
     queryFn: () => listFloorPlan({ outletId: outletId ?? undefined }),
@@ -324,6 +341,13 @@ export default function SalesPage() {
             loyaltyPoints: 0,
             createdAt: order.createdAt,
           }
+        : null
+    );
+    setPromoCode(order.promotionCode ?? "");
+    setRedeemPoints(order.loyaltyPointsRedeemed ? String(order.loyaltyPointsRedeemed) : "");
+    setDiscounts(
+      order.promotionCode || order.loyaltyPointsRedeemed
+        ? { code: order.promotionCode ?? "", points: order.loyaltyPointsRedeemed ?? 0 }
         : null
     );
     setCart(
@@ -446,6 +470,56 @@ export default function SalesPage() {
     return Math.round(subtotal * (taxRate.rate / 100));
   }, [subtotal, taxRate]);
   const total = taxRate?.type === "exclusive" ? subtotal + tax : subtotal;
+
+  // A promotion or points redemption changes what the customer owes, so the
+  // applied discounts are priced by the server and drive the totals below.
+  const effectiveTotal = promoPreview?.total ?? total;
+  const effectiveTax = promoPreview?.tax ?? tax;
+  const promotionDiscount = promoPreview?.promotionDiscount ?? 0;
+  const loyaltyDiscount = promoPreview?.loyaltyDiscount ?? 0;
+
+  React.useEffect(() => {
+    if (!discounts || !cart.length) {
+      setPromoPreview(null);
+      setPromoError(null);
+      return;
+    }
+
+    let cancelled = false;
+    previewPromotion({
+      items: cart.map((line) => ({
+        productId: line.productId,
+        quantity: line.quantity,
+        optionIds: line.optionIds,
+      })),
+      promotionCode: discounts.code || undefined,
+      customerId: customer?.id,
+      redeemPoints: discounts.points || 0,
+    })
+      .then((preview) => {
+        if (cancelled) return;
+        setPromoPreview(preview);
+        setPromoError(null);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setPromoPreview(null);
+        setPromoError(error instanceof Error ? error.message : "These discounts could not be applied");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cart, customer?.id, discounts]);
+
+  const clearDiscounts = () => {
+    setPromoCode("");
+    setRedeemPoints("");
+    setDiscounts(null);
+    setPromoPreview(null);
+    setPromoError(null);
+  };
+
   const itemCount = cart.reduce((sum, line) => sum + line.quantity, 0);
   const methods = methodsQuery.data ?? [];
   const selectedMethod = methods.find((method) => method.code === paymentMethod);
@@ -456,9 +530,9 @@ export default function SalesPage() {
     const amount = Number(line.amount) || 0;
     return (method?.type === "cash" || line.method === "cash") && amount > 0 ? sum + amount : sum;
   }, 0);
-  const tendered = usingSplit ? splitTendered : total;
-  const remaining = Math.max(0, total - tendered);
-  const change = Math.max(0, tendered - total);
+  const tendered = usingSplit ? splitTendered : effectiveTotal;
+  const remaining = Math.max(0, effectiveTotal - tendered);
+  const change = Math.max(0, tendered - effectiveTotal);
   const changeInvalid = change > 0.005 && change > splitCash + 0.005;
   const shortPaid = usingSplit && remaining > 0.005;
 
@@ -527,7 +601,7 @@ export default function SalesPage() {
     return [
       {
         method: paymentMethod,
-        amount: total,
+        amount: effectiveTotal,
         reference: payReference.trim() || undefined,
       },
     ];
@@ -537,6 +611,7 @@ export default function SalesPage() {
     setSplitOpen(false);
     setSplitLines([]);
     setPayReference("");
+    clearDiscounts();
   };
 
   const mutation = useMutation({
@@ -562,8 +637,15 @@ export default function SalesPage() {
           fulfilment: cleanFulfilment() ?? null,
           customerId: customer?.id ?? null,
           items: orderItems(),
+          promotionCode: discounts?.code ?? null,
+          redeemPoints: discounts?.points ?? null,
         });
-        return checkoutOrder(updated.id, { paymentMethod, payments });
+        return checkoutOrder(updated.id, {
+          paymentMethod,
+          payments,
+          promotionCode: discounts?.code || undefined,
+          redeemPoints: discounts?.points || undefined,
+        });
       }
 
       if (!checkoutKeyRef.current) {
@@ -583,6 +665,8 @@ export default function SalesPage() {
         orderType,
         tableId: orderType === "dine_in" && tableId ? tableId : undefined,
         fulfilment: cleanFulfilment(),
+        promotionCode: discounts?.code || undefined,
+        redeemPoints: discounts?.points || undefined,
       });
     },
     onSuccess: (transaction) => {
@@ -646,6 +730,8 @@ export default function SalesPage() {
         items: orderItems(),
         fulfilment: cleanFulfilment(),
         idempotencyKey: saveKeyRef.current,
+        promotionCode: discounts?.code || undefined,
+        redeemPoints: discounts?.points || undefined,
       });
     },
     onSuccess: (order) => {
@@ -660,6 +746,7 @@ export default function SalesPage() {
       setOrderType("dine_in");
       setTableId("");
       setActionError(null);
+      clearDiscounts();
       saveKeyRef.current = null;
       queryClient.invalidateQueries({ queryKey: ["orders"] });
       queryClient.invalidateQueries({ queryKey: ["floor-plan"] });
@@ -1169,6 +1256,94 @@ export default function SalesPage() {
             )}
           </div>
 
+          <div style={{ padding: "0 15px 12px" }}>
+            <div className="row between" style={{ marginBottom: 6 }}>
+              <div className="eyebrow" style={{ marginBottom: 0 }}>
+                Discounts
+              </div>
+              {discounts ? (
+                <button type="button" className="btn btn--link" style={{ fontSize: 11 }} onClick={clearDiscounts}>
+                  Clear
+                </button>
+              ) : null}
+            </div>
+            <div className="row" style={{ gap: 6 }}>
+              <Input
+                value={promoCode}
+                onChange={(event) => setPromoCode(event.target.value.toUpperCase())}
+                placeholder="Promo code"
+                aria-label="Promotion code"
+                autoComplete="off"
+                className="mono"
+                style={{ minHeight: 36 }}
+              />
+              <Button
+                variant="secondary"
+                size="sm"
+                style={{ minHeight: 36 }}
+                disabled={!cart.length || (!promoCode.trim() && !redeemPoints.trim())}
+                onClick={() => {
+                  setDiscounts({
+                    code: promoCode.trim().toUpperCase(),
+                    points: Number(redeemPoints) || 0,
+                  });
+                }}
+              >
+                Apply
+              </Button>
+            </div>
+            {loyalty ? (
+              <div className="stack" style={{ gap: 4, marginTop: 6 }}>
+                <div className="row" style={{ gap: 6 }}>
+                  <Input
+                    value={redeemPoints}
+                    onChange={(event) => setRedeemPoints(event.target.value.replace(/[^\d.]/g, ""))}
+                    placeholder={`Redeem points (min ${formatNumber(loyalty.minRedeemPoints)})`}
+                    aria-label="Loyalty points to redeem"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    disabled={!customer}
+                    style={{ minHeight: 36 }}
+                  />
+                </div>
+                <p className="hint" style={{ margin: 0 }}>
+                  {customer
+                    ? `${formatNumber(customer.loyaltyPoints)} points available · 1 point = ${formatCurrency(
+                        loyalty.redeemValue,
+                        currency
+                      )}`
+                    : "Attach a customer to redeem loyalty points."}
+                </p>
+              </div>
+            ) : null}
+            {promoError ? (
+              <div className="alert alert--warning" style={{ marginTop: 8 }}>
+                {promoError}
+              </div>
+            ) : null}
+            {promoPreview && (promotionDiscount > 0 || loyaltyDiscount > 0) ? (
+              <div className="stack-sm" style={{ gap: 2, marginTop: 8 }}>
+                {promotionDiscount > 0 ? (
+                  <div className="cart__row">
+                    <span className="hint" style={{ margin: 0 }}>
+                      {promoPreview.promotionName ?? "Promotion"}
+                      {promoPreview.promotionCode ? ` · ${promoPreview.promotionCode}` : ""}
+                    </span>
+                    <b>−{formatCurrency(promotionDiscount, currency)}</b>
+                  </div>
+                ) : null}
+                {loyaltyDiscount > 0 ? (
+                  <div className="cart__row">
+                    <span className="hint" style={{ margin: 0 }}>
+                      {formatNumber(promoPreview.loyaltyPointsRedeemed)} points redeemed
+                    </span>
+                    <b>−{formatCurrency(loyaltyDiscount, currency)}</b>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
           <div className="cart__load">
             {cart.length ? (
               cart.map((line) => (
@@ -1230,8 +1405,20 @@ export default function SalesPage() {
           <div className="cart__summary">
             <div className="cart__row">
               <span>Subtotal</span>
-              <b>{formatCurrency(subtotal, currency)}</b>
+              <b>{formatCurrency(promoPreview?.subtotal ?? subtotal, currency)}</b>
             </div>
+            {promotionDiscount > 0 ? (
+              <div className="cart__row">
+                <span>Promotion</span>
+                <b>−{formatCurrency(promotionDiscount, currency)}</b>
+              </div>
+            ) : null}
+            {loyaltyDiscount > 0 ? (
+              <div className="cart__row">
+                <span>Loyalty points</span>
+                <b>−{formatCurrency(loyaltyDiscount, currency)}</b>
+              </div>
+            ) : null}
             {taxRate ? (
               <div className="cart__row">
                 <span className="row row-tight">
@@ -1243,7 +1430,7 @@ export default function SalesPage() {
                       : "This tax is added to the subtotal. The server recalculates it at checkout."}
                   </InfoTip>
                 </span>
-                <b>{formatCurrency(tax, currency)}</b>
+                <b>{formatCurrency(effectiveTax, currency)}</b>
               </div>
             ) : taxQuery.isLoading ? (
               <div className="cart__row">
@@ -1258,7 +1445,7 @@ export default function SalesPage() {
             )}
             <div className="cart__total">
               <span>Total</span>
-              <b>{formatCurrency(total, currency)}</b>
+              <b>{formatCurrency(effectiveTotal, currency)}</b>
             </div>
             <p className="hint" style={{ margin: 0 }}>
               Final totals are confirmed by the server when the sale is recorded.
@@ -1281,7 +1468,14 @@ export default function SalesPage() {
                     setSplitLines((lines) =>
                       lines.length
                         ? lines
-                        : [{ id: splitLineId(), method: paymentMethod, amount: String(total), reference: "" }]
+                        : [
+                            {
+                              id: splitLineId(),
+                              method: paymentMethod,
+                              amount: String(effectiveTotal),
+                              reference: "",
+                            },
+                          ]
                     );
                     return true;
                   });
@@ -1464,7 +1658,7 @@ export default function SalesPage() {
                 mutation.mutate();
               }}
             >
-              Charge {formatCurrency(total, currency)}
+              Charge {formatCurrency(effectiveTotal, currency)}
             </Button>
             {!resumedOrder && has("orders.create") ? (
               <Button
@@ -1529,6 +1723,7 @@ export default function SalesPage() {
               onClick={() => {
                 setCart([]);
                 setCustomer(null);
+                clearDiscounts();
                 setClearOpen(false);
               }}
             >

@@ -21,7 +21,6 @@
 - Refresh token / session expiration handling
 - Returns, voids on the client (voids are wired; partial returns are not)
 - Cash registers, shifts
-- Customers directory and history
 - Stock transfers, stocktakes, receiving
 - Purchase order create/edit/approve/receive
 - Roles/permissions mutation endpoints
@@ -49,3 +48,8 @@
 - The register and order board key payments by method **code**, not display name or type. Custom rails (for example `shopeepay`) work anywhere a default rail does.
 - Split payments: the register charges with one method by default, or switches to split lines. The batch must cover the total; overpayment is allowed only when cash covers the change. The API fits the batch to its authoritative total (tax is rounded per line), so a one-rupiah display difference does not fail the sale. Immediate sales record the batch right after the sale; order checkout sends it atomically with the checkout call.
 - Refunds live on the receipt detail (`/transactions`). Requesting one needs `sales.refund`; pending refunds reserve their amount, and only pending ones can be approved or rejected. Approval rolls the payment and sale to `partially_refunded` / `refunded`; rejection releases the reserved amount. Voiding a completed sale marks its completed payments `refunded`.
+- Promotions (`/promotions`) need `promotions.view` and are limited to one per sale. A code is typed by the cashier; a promotion without a code applies automatically and the best qualifying one wins. Percentages cannot exceed 100, and a promotion that has been redeemed cannot be deleted (`422 PROMOTION_IN_USE`) — deactivate it instead. Minimum spend, maximum discount, total usage and per-customer limits are enforced server-side; a per-customer limit needs a customer on the sale.
+- The POS "Discounts" panel applies a promo code and/or loyalty points. Applying runs `POST /promotions/preview` (needs `sales.create`), which prices the cart without writing anything, so the displayed discount and total match what the server will charge. Editing the cart or the customer re-prices the preview. The code/points are then sent with the sale, with the order update, or with the order checkout.
+- Loyalty points are earned when a sale completes and only for sales with a customer. The register shows the balance and the point value from `GET /loyalty/program` (`loyalty.view`), and the redemption never holds points while a tab is open — they are spent in the checkout transaction and returned if the sale is voided. Settings (`/settings?section=loyalty`) needs `loyalty.view` to read and `loyalty.manage` to change the earn/redeem rates.
+- The customer sheet shows lifetime spend, visits, promotions used and the last few ledger entries. A manager with `loyalty.manage` can make a manual points adjustment with a reason; the API refuses to take a balance below zero (`422 LOYALTY_ERROR`).
+- Mock mode mirrors all of it: `mockDb.promotions`, `mockDb.promotionRedemptions`, `mockDb.loyaltyProgram` and `mockDb.loyaltyTransactions` drive previews and the register/order checkouts, so demo data behaves like the API.

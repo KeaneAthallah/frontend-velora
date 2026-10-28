@@ -39,7 +39,7 @@ import { getTransaction, listTransactions, voidTransaction } from "@/lib/api/sal
 import { approveRefund, listRefunds, rejectRefund, requestRefund } from "@/lib/api/payments";
 import { paymentMethodLabel } from "@/lib/api/reports";
 import type { Payment, Refund, Transaction } from "@/lib/api/types";
-import { formatCurrency, formatDateTime, formatTime } from "@/lib/formatting/currency";
+import { formatCurrency, formatDateTime, formatNumber, formatTime } from "@/lib/formatting/currency";
 import { itemCount, transactionLabel, transactionState, transactionTone } from "@/lib/formatting/transaction";
 import { useBusiness } from "@/lib/business/context";
 import { useAuth, usePermissions } from "@/lib/auth/auth-context";
@@ -716,6 +716,26 @@ function TransactionDetail({
           <div className="ledger__row">
             <dt>Discount</dt>
             <dd className="num">−{formatCurrency(transaction.discount, currency)}</dd>
+          </div>
+        ) : null}
+        {transaction.promotionDiscount ? (
+          <div className="ledger__row">
+            <dt>
+              Promotion
+              {transaction.promotionCode ? <span className="hint"> · {transaction.promotionCode}</span> : null}
+            </dt>
+            <dd className="num">−{formatCurrency(transaction.promotionDiscount, currency)}</dd>
+          </div>
+        ) : null}
+        {transaction.loyaltyDiscount ? (
+          <div className="ledger__row">
+            <dt>
+              Loyalty points
+              {transaction.loyaltyPointsRedeemed
+                ? ` · ${formatNumber(transaction.loyaltyPointsRedeemed)} redeemed`
+                : ""}
+            </dt>
+            <dd className="num">−{formatCurrency(transaction.loyaltyDiscount, currency)}</dd>
           </div>
         ) : null}
         <div className="ledger__row">

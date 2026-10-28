@@ -12,6 +12,7 @@ import {
 import { mapSale } from "./sales";
 import { mockFireOrder, mockSyncTicketsFromOrder, mockVoidTicketsForOrder } from "./kitchen";
 import { buildPaymentBatch, mockRecordPayments } from "./payments";
+import { mockFinalizeDiscounts, mockQuoteCart, previewPromotion } from "./promotions";
 import { mockActiveOrderForTable } from "./tables";
 import type {
   CreateOrderRequest,
@@ -101,15 +102,32 @@ function mockOrderItems(items: OrderItemInput[]): Transaction["items"] {
   });
 }
 
-function mockTotals(items: Transaction["items"]) {
-  const subtotal = items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
-  const taxRate = mockDb.taxRates.find((rate) => rate.isDefault && rate.isActive);
-  const rate = taxRate?.rate ?? 0;
-  const inclusive = taxRate?.type === "inclusive";
-  const tax = inclusive
-    ? Math.round(subtotal - subtotal / (1 + rate / 100))
-    : Math.round(subtotal * (rate / 100));
-  return { subtotal, tax, total: inclusive ? subtotal : subtotal + tax };
+function orderQuote(order: Transaction, input: { promotionCode?: string; redeemPoints?: number }) {
+  return mockQuoteCart({
+    items: order.items
+      .filter((item) => item.productId)
+      .map((item) => ({
+        productId: item.productId!,
+        quantity: item.quantity,
+        discount: item.discount,
+        optionIds: item.optionIds,
+      })),
+    promotionCode: input.promotionCode,
+    customerId: order.customerId,
+    redeemPoints: input.redeemPoints,
+  });
+}
+
+function applyQuote(order: Transaction, quote: ReturnType<typeof mockQuoteCart>) {
+  order.subtotal = quote.subtotal;
+  order.discount = quote.discount;
+  order.tax = quote.tax;
+  order.total = quote.total;
+  order.promotionCode = quote.promotionCode;
+  order.promotionName = quote.promotionName;
+  order.promotionDiscount = quote.promotionDiscount;
+  order.loyaltyDiscount = quote.loyaltyDiscount;
+  order.loyaltyPointsRedeemed = quote.loyaltyPointsRedeemed;
 }
 
 function mockFindOrder(id: string) {
@@ -215,6 +233,8 @@ function orderBody(request: CreateOrderRequest | UpdateOrderRequest) {
           })),
         }
       : {}),
+    ...("promotionCode" in request ? { promotion_code: request.promotionCode ?? null } : {}),
+    ...("redeemPoints" in request ? { redeem_points: request.redeemPoints ?? 0 } : {}),
   };
 }
 
@@ -245,7 +265,13 @@ export async function createOrder(request: CreateOrderRequest): Promise<Transact
   if (USE_MOCK_API) {
     const table = mockResolveTable(request.tableId, request.outletId, request.orderType);
     const items = mockOrderItems(request.items);
-    const totals = mockTotals(items);
+    const quote = mockQuoteCart({
+      items: request.items,
+      promotionCode: request.promotionCode,
+      customerId: request.customerId,
+      redeemPoints: request.redeemPoints,
+    });
+    const totals = { subtotal: quote.subtotal, tax: quote.tax, total: quote.total };
     const orderNumber = mockNextOrderNumber(request.outletId, request.orderType);
     const outlet = mockDb.outlets.find((entry) => entry.id === request.outletId);
     const customer = mockDb.customers.find((entry) => entry.id === request.customerId);
@@ -260,7 +286,13 @@ export async function createOrder(request: CreateOrderRequest): Promise<Transact
       customerName: customer?.name,
       items,
       ...totals,
-      discount: 0,
+      discount: quote.discount,
+      promotionCode: quote.promotionCode,
+      promotionName: quote.promotionName,
+      promotionDiscount: quote.promotionDiscount,
+      loyaltyDiscount: quote.loyaltyDiscount,
+      loyaltyPointsRedeemed: quote.loyaltyPointsRedeemed,
+      loyaltyPointsEarned: 0,
       paymentStatus: "pending",
       status: "completed",
       payments: [],
@@ -309,14 +341,30 @@ export async function updateOrder(id: string, request: UpdateOrderRequest): Prom
     }
 
     if (request.items) {
-      const items = mockOrderItems(request.items);
-      order.items = items;
-      Object.assign(order, mockTotals(items));
+      order.items = mockOrderItems(request.items);
     }
     if (request.notes !== undefined) order.notes = request.notes || undefined;
     if (request.customerId !== undefined) {
       order.customerId = request.customerId ?? undefined;
       order.customerName = mockDb.customers.find((entry) => entry.id === request.customerId)?.name;
+    }
+    if (
+      request.items ||
+      request.promotionCode !== undefined ||
+      request.redeemPoints !== undefined ||
+      request.customerId !== undefined
+    ) {
+      applyQuote(
+        order,
+        orderQuote(order, {
+          promotionCode:
+            request.promotionCode !== undefined ? request.promotionCode ?? undefined : order.promotionCode,
+          redeemPoints:
+            request.redeemPoints !== undefined
+              ? request.redeemPoints ?? 0
+              : order.loyaltyPointsRedeemed,
+        })
+      );
     }
     order.orderType = nextType;
     order.tableId = tableId;
@@ -361,7 +409,13 @@ export async function setOrderStatus(id: string, status: OrderStatus): Promise<T
 
 export async function checkoutOrder(
   id: string,
-  options?: { paymentMethod?: string; payments?: PaymentInput[]; idempotencyKey?: string }
+  options?: {
+    paymentMethod?: string;
+    payments?: PaymentInput[];
+    idempotencyKey?: string;
+    promotionCode?: string;
+    redeemPoints?: number;
+  }
 ): Promise<Transaction> {
   const paymentMethod = options?.paymentMethod ?? "cash";
 
@@ -370,6 +424,12 @@ export async function checkoutOrder(
     if (!order) throw new Error("Order not found");
     if (!ACTIVE_STATUSES.includes(order.orderStatus!)) throw new Error("Only open orders can be checked out");
     if (!order.items.length) throw new Error("Add at least one item before checkout");
+
+    const quote = orderQuote(order, {
+      promotionCode: options?.promotionCode !== undefined ? options.promotionCode : order.promotionCode,
+      redeemPoints: options?.redeemPoints !== undefined ? options.redeemPoints : order.loyaltyPointsRedeemed,
+    });
+    applyQuote(order, quote);
 
     const batch = buildPaymentBatch(order.total, options?.payments, paymentMethod);
     const recorded = mockRecordPayments(order.total, batch);
@@ -412,20 +472,45 @@ export async function checkoutOrder(
     order.changeAmount = recorded.change;
     order.paymentStatus = "paid";
     order.payments = recorded.payments;
+    order.loyaltyPointsEarned = mockFinalizeDiscounts(order, quote, order.customerId);
 
     mockDb.orders = mockDb.orders.filter((entry) => entry.id !== order.id);
     mockDb.transactions = [order, ...mockDb.transactions];
     return order;
   }
 
-  // The open order already carries its authoritative total, so the batch can
-  // be fitted before checkout and recorded in the same transaction.
+  // The checkout can apply a promotion or redemption, which changes the
+  // server total. Previewing it first keeps the payment batch fitted to the
+  // amount the server will actually charge.
   const order = mapSale(await apiRequest<any>(`/orders/${id}`));
-  const batch = buildPaymentBatch(order.total, options?.payments, paymentMethod);
+  let payable = order.total;
+
+  if (options?.promotionCode !== undefined || options?.redeemPoints !== undefined) {
+    const preview = await previewPromotion({
+      items: order.items
+        .filter((item) => item.productId)
+        .map((item) => ({
+          productId: item.productId!,
+          quantity: item.quantity,
+          discount: item.discount,
+          optionIds: item.optionIds,
+        })),
+      promotionCode: options.promotionCode ?? order.promotionCode,
+      customerId: order.customerId,
+      redeemPoints: options.redeemPoints ?? order.loyaltyPointsRedeemed,
+    });
+    payable = preview.total;
+  }
+
+  const batch = buildPaymentBatch(payable, options?.payments, paymentMethod);
 
   const checkedOut = await apiRequest<any>(`/orders/${id}/checkout`, {
     method: "POST",
     body: {
+      ...(options?.promotionCode !== undefined
+        ? { promotion_code: options.promotionCode.trim().toUpperCase() || null }
+        : {}),
+      ...(options?.redeemPoints !== undefined ? { redeem_points: options.redeemPoints } : {}),
       payments: batch.map((line) => ({
         method: line.method,
         amount: line.amount,
