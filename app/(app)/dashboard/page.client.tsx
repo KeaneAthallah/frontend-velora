@@ -3,14 +3,15 @@
 // Opt out of instant-navigation validation: these pages render data-dependent client UI.
 export const instant = false;
 
-
 import * as React from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
+import { format } from "date-fns";
 import {
   ArrowRight,
   BarChart3,
   Boxes,
+  ChefHat,
   PackageOpen,
   Receipt,
   ShoppingCart,
@@ -19,9 +20,11 @@ import {
 import { PageHeader, Stat } from "@/components/ui/page-header";
 import { Card, CardBody, CardFooter, CardHeader } from "@/components/ui/card";
 import { Badge, Button, Delta, EmptyState, InfoTip, Segmented, Skeleton } from "@/components/ui/primitives";
-import { SalesAreaChart, PaymentMixBar, CategoryBars } from "@/components/ui/charts";
+import { Sparkline, SalesAreaChart, PaymentMixBar, CategoryBars } from "@/components/ui/charts";
 import { AccessDenied, InlineError, StatGridSkeleton } from "@/components/ui/states";
 import { dashboardMetrics, paymentMethodLabel } from "@/lib/api/reports";
+import { listKitchenTickets, ticketStatusLabel } from "@/lib/api/kitchen";
+import type { KitchenBoard } from "@/lib/api/types";
 import { formatCurrency, formatNumber, formatRelative } from "@/lib/formatting/currency";
 import { itemCount, transactionLabel, transactionTone } from "@/lib/formatting/transaction";
 import { RANGE_OPTIONS, type RangeKey } from "@/lib/date-range";
@@ -34,7 +37,13 @@ export default function OverviewPage() {
   const { session } = useAuth();
   const { outletId, outlet } = useBusiness();
   const [range, setRange] = React.useState<RangeKey>("7d");
+  // The greeting is clock-based, so it is resolved after mount to keep SSR output stable.
+  const [now, setNow] = React.useState<Date | null>(null);
   const currency = session?.business.currency ?? "IDR";
+
+  React.useEffect(() => {
+    setNow(new Date());
+  }, []);
 
   const query = useQuery({
     queryKey: ["dashboard", range, outletId],
@@ -43,24 +52,38 @@ export default function OverviewPage() {
     staleTime: 30_000,
   });
 
+  const canSeeKitchen = has("kitchen.view");
+
+  const kitchen = useQuery({
+    queryKey: ["kitchen", "overview", outletId],
+    queryFn: () => listKitchenTickets({ outletId: outletId ?? undefined, status: "active" }),
+    enabled: canSeeKitchen && Boolean(outletId),
+    staleTime: 30_000,
+  });
+
   if (!has("reports.view")) {
     return <AccessDenied permission="reports.view" />;
   }
 
+  const daypart = !now ? "day" : now.getHours() < 12 ? "morning" : now.getHours() < 18 ? "afternoon" : "evening";
+  const firstName = session?.user.name?.trim().split(/\s+/)[0] || "there";
+  const greeting = now
+    ? daypart === "day"
+      ? "Overview"
+      : `Good ${daypart}, ${firstName}`
+    : "Overview";
+  const context = [now ? format(now, "EEEE, d MMMM yyyy") : null, outlet?.name ?? session?.business.name]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
     <>
       <PageHeader
-        eyebrow={`${outlet?.name ?? session?.business.name ?? "Workspace"} · ${query.data?.period.label ?? "Today"}`}
-        title="Overview"
-        description="A live read of the store, built only from recorded sales, stock, and products."
+        title={greeting}
+        description={context || "Your store at a glance"}
         actions={
           <>
-            <Segmented
-              label="Reporting period"
-              options={RANGE_OPTIONS}
-              value={range}
-              onChange={setRange}
-            />
+            <Segmented label="Reporting period" options={RANGE_OPTIONS} value={range} onChange={setRange} />
             {has("sales.create") ? (
               <Link href="/sales" className="btn btn--primary">
                 <ShoppingCart aria-hidden="true" />
@@ -88,6 +111,9 @@ export default function OverviewPage() {
           canSell={has("sales.create")}
           canSeeInventory={has("inventory.view")}
           canSeeReports={has("reports.view")}
+          canSeeKitchen={canSeeKitchen}
+          kitchen={kitchen.data}
+          kitchenLoading={kitchen.isLoading}
           onRangeChange={setRange}
         />
       )}
@@ -123,6 +149,9 @@ function OverviewContent({
   canSell,
   canSeeInventory,
   canSeeReports,
+  canSeeKitchen,
+  kitchen,
+  kitchenLoading,
   onRangeChange,
 }: {
   data: Awaited<ReturnType<typeof dashboardMetrics>>;
@@ -130,9 +159,12 @@ function OverviewContent({
   canSell: boolean;
   canSeeInventory: boolean;
   canSeeReports: boolean;
+  canSeeKitchen: boolean;
+  kitchen?: KitchenBoard;
+  kitchenLoading: boolean;
   onRangeChange: (range: RangeKey) => void;
 }) {
-  const { current, previous, changes, trend, previousTrend, period } = data;
+  const { current, previous, changes, trend, previousTrend, period, daily } = data;
   const hasSales = current.transactions > 0;
   const peak = React.useMemo(
     () => [...trend].sort((a, b) => b.value - a.value).find((point) => point.value > 0),
@@ -141,6 +173,15 @@ function OverviewContent({
   const comparisonAvailable = Boolean(previous && (previous.transactions > 0 || previous.netSales > 0));
   const timeLabel = period.key === "today" ? "today" : period.label.toLowerCase();
 
+  const salesSeries = React.useMemo(() => daily.map((row) => row.netSales), [daily]);
+  const orderSeries = React.useMemo(() => daily.map((row) => row.orders), [daily]);
+  const averageSeries = React.useMemo(
+    () => daily.filter((row) => row.orders > 0).map((row) => row.netSales / row.orders),
+    [daily]
+  );
+  const itemSeries = React.useMemo(() => daily.map((row) => row.itemsSold), [daily]);
+  const sparkTone = (value: number | null) => (value !== null && value < 0 ? "down" : "up");
+
   return (
     <>
       <div className="grid-4">
@@ -148,6 +189,13 @@ function OverviewContent({
           label="Net sales"
           value={formatCurrency(current.netSales, currency)}
           info="Recorded sales after discounts and excluding tax. Voided and refunded receipts are excluded."
+          spark={
+            <Sparkline
+              values={salesSeries}
+              tone={sparkTone(changes.netSales)}
+              ariaLabel="Net sales trend for the selected period"
+            />
+          }
           foot={
             <>
               <Delta value={changes.netSales} />
@@ -156,9 +204,16 @@ function OverviewContent({
           }
         />
         <Stat
-          label="Transactions"
+          label="Orders"
           value={formatNumber(current.transactions)}
           info="Completed receipts in the selected period. Voided and refunded receipts are excluded."
+          spark={
+            <Sparkline
+              values={orderSeries}
+              tone={sparkTone(changes.transactions)}
+              ariaLabel="Order count trend for the selected period"
+            />
+          }
           foot={
             <>
               <Delta value={changes.transactions} />
@@ -167,9 +222,16 @@ function OverviewContent({
           }
         />
         <Stat
-          label="Average sale"
+          label="Average order"
           value={formatCurrency(current.avgTransaction, currency)}
           info="Net sales divided by completed transactions in this period."
+          spark={
+            <Sparkline
+              values={averageSeries}
+              tone={sparkTone(changes.avgTransaction)}
+              ariaLabel="Average order value trend for the selected period"
+            />
+          }
           foot={
             <>
               <Delta value={changes.avgTransaction} />
@@ -181,6 +243,13 @@ function OverviewContent({
           label="Items sold"
           value={formatNumber(current.itemsSold)}
           info="Units sold across completed receipts. Product totals come from the sales-by-product report."
+          spark={
+            <Sparkline
+              values={itemSeries}
+              tone={sparkTone(changes.itemsSold)}
+              ariaLabel="Units sold trend for the selected period"
+            />
+          }
           foot={
             <>
               <Delta value={changes.itemsSold} />
@@ -300,10 +369,10 @@ function OverviewContent({
 
         <Card>
           <CardHeader
-            title="Payment mix"
+            title="Sales mix"
             description="How customers settled completed sales."
             actions={
-              <InfoTip label="About the payment mix">
+              <InfoTip label="About the sales mix">
                 Payments are grouped by the method recorded at checkout. There can be more than one
                 payment per sale.
               </InfoTip>
@@ -343,10 +412,10 @@ function OverviewContent({
         </Card>
       </div>
 
-      <div className="grid-main">
+      <div className={canSeeKitchen ? "grid-main" : undefined}>
         <Card>
           <CardHeader
-            title="Recent sales"
+            title="Recent orders"
             description="The latest completed receipts in this period."
             actions={
               <Link href="/transactions" className="btn btn--quiet btn--sm">
@@ -357,42 +426,40 @@ function OverviewContent({
           />
           <CardBody flush>
             {data.recentTransactions.length ? (
-              <div className="record-list">
-                {data.recentTransactions.map((transaction) => (
-                  <Link
-                    key={transaction.id}
-                    href={`/transactions?q=${encodeURIComponent(transaction.receiptNumber)}`}
-                    className="record"
-                    style={{ color: "inherit" }}
-                  >
-                    <div className="record__top">
-                      <div style={{ minWidth: 0 }}>
-                        <div className="record__title">
-                          <span className="mono" style={{ fontSize: 12 }}>
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Order</th>
+                      <th>Customer</th>
+                      <th className="cell-num">Items</th>
+                      <th className="cell-num">Total</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.recentTransactions.map((transaction) => (
+                      <tr key={transaction.id}>
+                        <td>
+                          <Link
+                            href={`/transactions?q=${encodeURIComponent(transaction.receiptNumber)}`}
+                            className="mono cell-primary"
+                          >
                             {transaction.receiptNumber}
-                          </span>
-                        </div>
-                        <div className="record__meta">
-                          {transaction.customerName || "Walk-in guest"} · {transaction.cashierName || "Cashier"} ·{" "}
-                          {formatRelative(transaction.createdAt)}
-                        </div>
-                      </div>
-                      <div style={{ textAlign: "right", flexShrink: 0 }}>
-                        <b className="num" style={{ display: "block", fontSize: 13 }}>
-                          {formatCurrency(transaction.total, currency)}
-                        </b>
-                        <div className="row row-tight" style={{ justifyContent: "flex-end", marginTop: 3 }}>
+                          </Link>
+                        </td>
+                        <td className="cell-muted">{transaction.customerName || "Walk-in guest"}</td>
+                        <td className="cell-num">{itemCount(transaction)}</td>
+                        <td className="cell-num">{formatCurrency(transaction.total, currency)}</td>
+                        <td>
                           <Badge tone={transactionTone(transaction)} dot>
                             {transactionLabel(transaction)}
                           </Badge>
-                          <span className="hint" style={{ margin: 0, fontSize: 10 }}>
-                            {itemCount(transaction)} items
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </Link>
-                ))}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             ) : (
               <EmptyState
@@ -412,6 +479,12 @@ function OverviewContent({
           </CardBody>
         </Card>
 
+        {canSeeKitchen ? (
+          <KitchenQueue board={kitchen} loading={kitchenLoading} />
+        ) : null}
+      </div>
+
+      <div className="grid-4">
         <Card>
           <CardHeader
             title="Top products"
@@ -448,9 +521,7 @@ function OverviewContent({
             )}
           </CardBody>
         </Card>
-      </div>
 
-      <div className="grid-3">
         <Card>
           <CardHeader title="Sales by category" description="Revenue split from recorded line items." />
           <CardBody>
@@ -544,4 +615,83 @@ function OverviewContent({
       </div>
     </>
   );
+}
+
+function KitchenQueue({ board, loading }: { board?: KitchenBoard; loading: boolean }) {
+  const tickets = React.useMemo(() => {
+    if (!board) return [];
+    return [...board.tickets]
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+      .slice(0, 4);
+  }, [board]);
+
+  const active = board ? board.counts.queued + board.counts.preparing + board.counts.ready : 0;
+
+  return (
+    <Card>
+      <CardHeader
+        title="Kitchen queue"
+        description="Tickets moving through the kitchen right now."
+        actions={
+          active > 0 ? (
+            <Badge tone="warning" dot>
+              {active} active
+            </Badge>
+          ) : null
+        }
+      />
+      <CardBody flush>
+        {loading ? (
+          <Skeleton style={{ height: 150, margin: 16 }} />
+        ) : tickets.length ? (
+          <div className="record-list">
+            {tickets.map((ticket) => {
+              const wait = waitingMinutes(ticket.startedAt ?? ticket.createdAt);
+              const items = ticket.items.map((item) => `${item.name} ×${item.quantity}`).join(", ");
+              return (
+                <Link
+                  key={ticket.id}
+                  href="/kitchen"
+                  className="record"
+                  style={{ color: "inherit", display: "block" }}
+                >
+                  <div className="record__top">
+                    <div style={{ minWidth: 0 }}>
+                      <div className="record__title">{ticket.ticketNumber}</div>
+                      <div className="record__meta">
+                        {items || "No items"} · {ticket.station.name}
+                      </div>
+                    </div>
+                    <Badge tone={waitTone(wait)}>{wait} min</Badge>
+                  </div>
+                  <div className="record__meta" style={{ marginTop: 4 }}>
+                    {ticketStatusLabel(ticket.status)} · opened {formatRelative(ticket.createdAt)}
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        ) : (
+          <EmptyState
+            compact
+            icon={<ChefHat aria-hidden="true" />}
+            title="The queue is clear"
+            description="New tickets appear here as soon as the kitchen starts prep."
+          />
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
+function waitingMinutes(iso: string) {
+  const started = new Date(iso).getTime();
+  if (!Number.isFinite(started)) return 0;
+  return Math.max(0, Math.round((Date.now() - started) / 60_000));
+}
+
+function waitTone(minutes: number) {
+  if (minutes >= 10) return "danger" as const;
+  if (minutes >= 5) return "warning" as const;
+  return "success" as const;
 }

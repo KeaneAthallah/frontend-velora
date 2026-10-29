@@ -322,6 +322,7 @@ export default function ProductsPage() {
             rowId={(row) => row.id}
             loading={productsQuery.isLoading && !productsQuery.data}
             onRowClick={canManage ? openEdit : undefined}
+            dense
             minWidth={820}
             empty={
               <EmptyState

@@ -205,6 +205,8 @@ export default function SalesPage() {
   const [tableId, setTableId] = React.useState("");
   const [fulfilment, setFulfilment] = React.useState<OrderFulfilment>(EMPTY_FULFILMENT);
   const [resumedOrder, setResumedOrder] = React.useState<Transaction | null>(null);
+  // On phones the cart becomes a bottom sheet; on wider screens it is always visible.
+  const [cartOpen, setCartOpen] = React.useState(false);
   const [orderParam, setOrderParam, orderParamReady] = useSearchParamState("order");
   const [tableParam, setTableParam, tableParamReady] = useSearchParamState("table");
 
@@ -215,6 +217,15 @@ export default function SalesPage() {
   const hydratedOrderRef = React.useRef<string | null>(null);
 
   const currency = session?.business.currency ?? "IDR";
+
+  React.useEffect(() => {
+    if (!cartOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setCartOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [cartOpen]);
 
   React.useEffect(() => {
     const stored = readCart(outletId);
@@ -854,9 +865,8 @@ export default function SalesPage() {
     }
   };
 
-  const scrollToOrder = () => {
-    document.getElementById("current-order")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
+  const openOrder = () => setCartOpen(true);
+  const closeOrder = () => setCartOpen(false);
 
   const setupNeeded = !productsQuery.isLoading && products.length === 0;
 
@@ -893,7 +903,7 @@ export default function SalesPage() {
             <Button
               variant="secondary"
               className="pos__mobile-order"
-              onClick={scrollToOrder}
+              onClick={openOrder}
               disabled={!cart.length}
             >
               <ShoppingBag aria-hidden="true" />
@@ -1038,37 +1048,34 @@ export default function SalesPage() {
                     disabled={out || maxed || unavailable}
                     aria-label={`Add ${product.name} to order, ${formatCurrency(product.price, currency)}`}
                   >
-                    <div className="row between" style={{ alignItems: "flex-start" }}>
-                      <span className="product-tile__mono" aria-hidden="true">
-                        {initials(product.name)}
+                    {inCart && !out && !unavailable ? (
+                      <span className="product-tile__qty" aria-hidden="true">
+                        {formatNumber(inCart)}
                       </span>
-                      {unavailable ? (
-                        <Badge tone="danger">86</Badge>
-                      ) : out ? (
-                        <Badge tone="danger">Out</Badge>
-                      ) : tracked && stock <= 10 ? (
-                        <Badge tone="warning">{formatNumber(stock)} left</Badge>
-                      ) : inCart ? (
-                        <Badge tone="brand">{inCart} in order</Badge>
-                      ) : null}
-                    </div>
-                    <div>
+                    ) : null}
+                    <span className="product-tile__mono" aria-hidden="true">
+                      {initials(product.name)}
+                    </span>
+                    <div className="product-tile__body">
                       <div className="product-tile__name">{product.name}</div>
-                      <div className="hint" style={{ marginTop: 2 }}>
-                        {unavailable && menuProduct?.unavailableReason
-                          ? menuProduct.unavailableReason
-                          : product.categoryName || product.sku}
+                      <div className="product-tile__meta">
+                        <span className="product-tile__price" data-off={out || unavailable ? "true" : undefined}>
+                          {formatCurrency(product.price, currency)}
+                        </span>
+                        {unavailable ? (
+                          <span className="product-tile__stock" title={menuProduct?.unavailableReason}>
+                            86
+                          </span>
+                        ) : out ? (
+                          <span className="product-tile__stock" data-low="true">
+                            Sold out
+                          </span>
+                        ) : tracked && stock <= 10 ? (
+                          <span className="product-tile__stock" data-low="true">
+                            {formatNumber(stock)} {product.unit ?? ""}
+                          </span>
+                        ) : null}
                       </div>
-                    </div>
-                    <div className="product-tile__meta">
-                      <span className="product-tile__price">{formatCurrency(product.price, currency)}</span>
-                      <span className="product-tile__stock" data-low={tracked && stock <= 10}>
-                        {unavailable
-                          ? "Unavailable"
-                          : tracked
-                            ? `${formatNumber(stock)} ${product.unit ?? ""}`
-                            : "Untracked"}
-                      </span>
                     </div>
                   </button>
                 );
@@ -1084,7 +1091,17 @@ export default function SalesPage() {
           ) : null}
         </section>
 
-        <aside className="cart" id="current-order" aria-label="Current order">
+        {cartOpen ? (
+          <button type="button" className="cart-backdrop" aria-label="Close order" onClick={closeOrder} />
+        ) : null}
+
+        <aside
+          className="cart"
+          id="current-order"
+          aria-label="Current order"
+          data-open={cartOpen ? "true" : "false"}
+        >
+          <div className="cart__grabber" aria-hidden="true" />
           <div className="cart__head">
             <div>
               <div className="row row-tight">
@@ -1096,12 +1113,22 @@ export default function SalesPage() {
                 {tableLabel ? ` · ${tableLabel}` : ""}
               </p>
             </div>
-            {cart.length ? (
-              <Button variant="quiet" size="sm" onClick={() => setClearOpen(true)}>
-                <Trash2 aria-hidden="true" />
-                Clear
-              </Button>
-            ) : null}
+            <div className="row row-tight">
+              {cart.length ? (
+                <Button variant="quiet" size="sm" onClick={() => setClearOpen(true)}>
+                  <Trash2 aria-hidden="true" />
+                  Clear
+                </Button>
+              ) : null}
+              <button
+                type="button"
+                className="icon-btn cart__close"
+                onClick={closeOrder}
+                aria-label="Close order"
+              >
+                <X aria-hidden="true" />
+              </button>
+            </div>
           </div>
 
           <div style={{ padding: "12px 15px 0" }}>
@@ -1686,6 +1713,15 @@ export default function SalesPage() {
             </p>
           </div>
         </aside>
+
+        <button type="button" className="pos__order-bar" onClick={openOrder}>
+          <span className="pos__order-bar-count">{itemCount}</span>
+          <span className="pos__order-bar-copy">
+            <b>{itemCount ? (itemCount === 1 ? "1 item" : `${itemCount} items`) : "No items yet"}</b>
+            <span>{formatCurrency(effectiveTotal, currency)}</span>
+          </span>
+          <span className="pos__order-bar-cta">{cart.length ? "Review order" : "Order"}</span>
+        </button>
       </div>
 
       <CustomerPickerDialog

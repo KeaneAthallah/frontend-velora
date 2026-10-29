@@ -36,6 +36,7 @@ export function Stat({
   unit,
   foot,
   info,
+  spark,
   className,
   emphasis = false,
 }: {
@@ -44,20 +45,25 @@ export function Stat({
   unit?: React.ReactNode;
   foot?: React.ReactNode;
   info?: React.ReactNode;
+  /** Optional inline trend graphic, shown beside the value on wide cards. */
+  spark?: React.ReactNode;
   className?: string;
   emphasis?: boolean;
 }) {
   return (
-    <div className={cn("stat", className)}>
+    <div className={cn("stat", spark && "stat--spark", className)}>
       <div className="stat__label">
         <span>{label}</span>
         {info && <InfoTip label={`About ${typeof label === "string" ? label : "this metric"}`}>{info}</InfoTip>}
       </div>
-      <div className="stat__value" style={emphasis ? { color: "hsl(var(--primary))" } : undefined}>
-        {value}
-        {unit && <span className="stat__unit">{unit}</span>}
+      <div className="stat__body">
+        <div className="stat__value" style={emphasis ? { color: "hsl(var(--primary))" } : undefined}>
+          {value}
+          {unit && <span className="stat__unit">{unit}</span>}
+        </div>
+        {foot && <div className="stat__foot">{foot}</div>}
       </div>
-      {foot && <div className="stat__foot">{foot}</div>}
+      {spark && <div className="stat__spark">{spark}</div>}
     </div>
   );
 }

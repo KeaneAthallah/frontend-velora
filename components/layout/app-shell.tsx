@@ -4,6 +4,7 @@ import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { useAuth, usePermissions } from "@/lib/auth/auth-context";
+import { useBusiness } from "@/lib/business/context";
 import { defaultRoute } from "@/lib/navigation";
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
@@ -13,6 +14,7 @@ import { CommandPalette } from "./command-palette";
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth();
   const { has } = usePermissions();
+  const { outlets, outletsChecked, outletsLoaded } = useBusiness();
   const router = useRouter();
   const pathname = usePathname();
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
@@ -34,11 +36,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     if (loading || !session) return;
+    // Accounts without a business cannot load tenant data; finish setup first.
+    if (!session.business.id) {
+      router.replace("/onboarding");
+      return;
+    }
+    // So can accounts whose business has no outlet yet: every screen is
+    // outlet-scoped, so an outlet-less workspace would only render empty.
+    if (outletsLoaded && outlets.length === 0) {
+      router.replace("/onboarding");
+      return;
+    }
     if (pathname === "/" && !has("reports.view")) {
       const next = defaultRoute(has);
       if (next !== "/") router.replace(next);
     }
-  }, [loading, session, pathname, has, router]);
+  }, [loading, session, outlets, outletsLoaded, pathname, has, router]);
 
   React.useEffect(() => {
     if (!mobileNavOpenRef.current) return;
@@ -125,7 +138,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     });
   };
 
-  if (loading) {
+  if (loading || (session?.business.id && !outletsChecked)) {
     return (
       <div className="boot" role="status" aria-label="Loading workspace">
         <Loader2 className="animate-spin" aria-hidden="true" />

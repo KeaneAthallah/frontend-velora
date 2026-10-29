@@ -6,8 +6,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronsLeft, ChevronsRight, X } from "lucide-react";
 import { filterNavGroups } from "@/lib/navigation";
-import { usePermissions } from "@/lib/auth/auth-context";
-import { useTheme } from "@/components/providers/theme-provider";
+import { useAuth, usePermissions } from "@/lib/auth/auth-context";
+import { useBusiness } from "@/lib/business/context";
 import { OutletSwitcher } from "./outlet-switcher";
 
 export function Sidebar({
@@ -21,12 +21,19 @@ export function Sidebar({
 }) {
   const pathname = usePathname();
   const { has } = usePermissions();
-  const { resolved } = useTheme();
+  const { session } = useAuth();
+  const { outlet } = useBusiness();
   const groups = React.useMemo(() => filterNavGroups(has), [has]);
-  const logo = resolved === "dark" ? "/brand/velora_app_icon_dark.png" : "/brand/velora_app_icon_light.png";
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
+
+  const initials = (session?.user.name ?? "User")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
 
   return (
     <aside
@@ -38,22 +45,16 @@ export function Sidebar({
       }
     >
       <div className="sidebar__brand">
-        <Link
-          href="/"
-          className="sidebar__brand"
-          style={{ height: "auto", padding: 0, border: 0 }}
-          onClick={onNavigate}
-        >
+        <Link href="/" className="sidebar__brand-link" onClick={onNavigate}>
           <Image
-            src={logo}
+            src="/brand/velora_app_icon_dark.png"
             alt=""
-            width={25}
-            height={27}
+            width={28}
+            height={30}
             className="sidebar__logo"
             priority
           />
           <span className="sidebar__wordmark">Velora</span>
-          <span className="sidebar__brand-meta">POS</span>
         </Link>
         <button
           type="button"
@@ -64,6 +65,10 @@ export function Sidebar({
         >
           <X aria-hidden="true" />
         </button>
+      </div>
+
+      <div className="sidebar__context">
+        <OutletSwitcher />
       </div>
 
       <div className="sidebar__body">
@@ -93,12 +98,16 @@ export function Sidebar({
       </div>
 
       <div className="sidebar__foot">
-        <OutletSwitcher />
-        <button
-          type="button"
-          className="sidebar__collapse"
-          onClick={onToggleCollapsed}
-        >
+        <div className="sidebar__user">
+          <span className="sidebar__user-avatar" aria-hidden="true">
+            {initials || "V"}
+          </span>
+          <span className="sidebar__user-copy">
+            <b>{session?.user.name ?? "Account"}</b>
+            <span>{outlet?.name ?? session?.business.name ?? "No outlet"}</span>
+          </span>
+        </div>
+        <button type="button" className="sidebar__collapse" onClick={onToggleCollapsed}>
           {collapsed ? <ChevronsRight aria-hidden="true" /> : <ChevronsLeft aria-hidden="true" />}
           <span>{collapsed ? "Expand" : "Collapse"}</span>
         </button>

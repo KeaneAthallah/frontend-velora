@@ -148,8 +148,7 @@ export default function LoginPage() {
         ) : null}
 
         <p className="auth__switch">
-          Need access or a password reset? Ask your workspace owner. Velora does not create
-          accounts from the public sign-in page.
+          New to Velora? <Link href="/register">Create an account</Link>
         </p>
       </div>
     </AuthShell>

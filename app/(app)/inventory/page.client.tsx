@@ -205,6 +205,25 @@ export default function InventoryPage() {
       ),
     },
     {
+      id: "level",
+      header: "Level",
+      cell: (row) => {
+        const target = Math.max(LOW_STOCK * 2, 1);
+        const pct = Math.min(100, Math.round((row.stock / target) * 100));
+        const tone = row.stock <= 0 ? "danger" : row.stock <= LOW_STOCK ? "warning" : "success";
+        return (
+          <div
+            className="bar-track"
+            style={{ width: 96 }}
+            role="img"
+            aria-label={`${pct}% of target`}
+          >
+            <div className="bar-fill" data-tone={tone} style={{ width: `${Math.max(pct, 3)}%` }} />
+          </div>
+        );
+      },
+    },
+    {
       id: "status",
       header: "Status",
       cell: (row) =>
@@ -440,7 +459,8 @@ export default function InventoryPage() {
             columns={stockColumns}
             rowId={(row) => row.productId}
             loading={loading}
-            minWidth={720}
+            dense
+            minWidth={780}
             empty={
               <EmptyState
                 icon={<Boxes aria-hidden="true" />}
@@ -523,6 +543,7 @@ export default function InventoryPage() {
             columns={movementColumns}
             rowId={(row) => row.id}
             loading={movementsQuery.isLoading && !movementsQuery.data}
+            dense
             minWidth={680}
             empty={
               <EmptyState

@@ -36,7 +36,7 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
         </Link>
 
         <div className="auth__pitch">
-          <span className="eyebrow" style={{ color: "hsl(220 98% 74%)" }}>
+          <span className="eyebrow" style={{ color: "hsl(252 81% 76%)" }}>
             Retail operations
           </span>
           <div className="auth__pitch-heading">

@@ -11,6 +11,8 @@ import {
   ChefHat,
   CircleCheck,
   Clock,
+  LayoutGrid,
+  List,
   Package,
   RefreshCw,
   Search,
@@ -87,6 +89,8 @@ export default function OrdersPage() {
   const [search, setSearch] = React.useState("");
   const [orderType, setOrderType] = React.useState<"" | OrderType>("");
   const [showAll, setShowAll] = React.useState(false);
+  const [view, setView] = React.useState<"board" | "list">("board");
+  const [statusTab, setStatusTab] = React.useState<"all" | OrderStatus>("all");
   const [checkoutTarget, setCheckoutTarget] = React.useState<Transaction | null>(null);
   const [paymentMethod, setPaymentMethod] = React.useState("cash");
   const [checkoutReference, setCheckoutReference] = React.useState("");
@@ -248,6 +252,30 @@ export default function OrdersPage() {
     (order) => order.orderStatus !== "completed" && order.orderStatus !== "cancelled"
   ).length;
 
+  const statusTabs: { value: "all" | OrderStatus; label: string }[] = [
+    { value: "all", label: "All" },
+    ...COLUMNS.map((column) => ({ value: column.status, label: column.label })),
+    ...(showAll
+      ? [
+          { value: "completed" as OrderStatus, label: "Completed" },
+          { value: "cancelled" as OrderStatus, label: "Cancelled" },
+        ]
+      : []),
+  ];
+
+  const listRows = (statusTab === "all" ? orders : orders.filter((order) => order.orderStatus === statusTab))
+    .slice()
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  const statusTone = (status?: OrderStatus) => {
+    if (status === "in_kitchen") return "warning" as const;
+    if (status === "ready") return "success" as const;
+    if (status === "served") return "brand" as const;
+    if (status === "completed") return "success" as const;
+    if (status === "cancelled") return "danger" as const;
+    return "info" as const;
+  };
+
   const renderCard = (order: Transaction) => {
     const minutes = waitedMinutes(order);
     const late = minutes >= 20 && order.orderStatus !== "served" && order.orderStatus !== "completed";
@@ -408,6 +436,20 @@ export default function OrdersPage() {
         description="Open tabs and the kitchen queue. Refreshes every few seconds; stock moves when an order is checked out."
         actions={
           <>
+            <div className="segmented hide-mobile" role="group" aria-label="Order layout">
+              <button
+                type="button"
+                aria-pressed={view === "board"}
+                onClick={() => setView("board")}
+              >
+                <LayoutGrid aria-hidden="true" style={{ width: 13, height: 13, marginRight: 5 }} />
+                Board
+              </button>
+              <button type="button" aria-pressed={view === "list"} onClick={() => setView("list")}>
+                <List aria-hidden="true" style={{ width: 13, height: 13, marginRight: 5 }} />
+                List
+              </button>
+            </div>
             <Button variant="secondary" onClick={() => query.refetch()} loading={query.isFetching}>
               <RefreshCw aria-hidden="true" />
               Refresh
@@ -473,6 +515,103 @@ export default function OrdersPage() {
               </Button>
             }
           />
+        </div>
+      ) : view === "list" ? (
+        <div className="card" style={{ padding: "0 0 4px" }}>
+          <div
+            className="tabs"
+            role="tablist"
+            aria-label="Filter orders by status"
+            style={{ padding: "0 16px" }}
+          >
+            {statusTabs.map((tab) => {
+              const count =
+                tab.value === "all" ? orders.length : orders.filter((order) => order.orderStatus === tab.value).length;
+              return (
+                <button
+                  key={tab.value}
+                  type="button"
+                  role="tab"
+                  className="tab"
+                  aria-selected={statusTab === tab.value}
+                  onClick={() => setStatusTab(tab.value)}
+                >
+                  {tab.label}
+                  <span className="tab__count">{count}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {query.isLoading ? (
+            <div className="stack-sm" style={{ padding: 16 }} aria-busy="true">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <div key={index} className="skeleton" style={{ height: 16 }} />
+              ))}
+            </div>
+          ) : listRows.length ? (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Order</th>
+                    <th>Source</th>
+                    <th>Customer</th>
+                    <th className="cell-num">Items</th>
+                    <th>Placed</th>
+                    <th className="cell-num">Total</th>
+                    <th>Status</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {listRows.map((order) => {
+                    const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
+                    const minutes = waitedMinutes(order);
+                    const late = minutes >= 20 && (order.orderStatus === "open" || order.orderStatus === "in_kitchen");
+                    return (
+                      <tr key={order.id} data-late={late || undefined}>
+                        <td className="cell-primary mono">{order.orderNumber ?? order.receiptNumber}</td>
+                        <td>
+                          <span className="row row-tight" style={{ gap: 6 }}>
+                            {typeIcon(order.orderType)}
+                            {orderTypeLabel(order.orderType)}
+                            {order.tableName ? <span className="tag">{order.tableName}</span> : null}
+                            {order.channelName ? <span className="hint">{order.channelName}</span> : null}
+                          </span>
+                        </td>
+                        <td className={order.customerName || order.fulfilment?.contactName ? undefined : "cell-muted"}>
+                          {order.customerName ?? order.fulfilment?.contactName ?? "Walk-in"}
+                        </td>
+                        <td className="cell-num">{itemCount}</td>
+                        <td>
+                          {formatTime(order.createdAt)}
+                          {late ? <span className="hint"> · {minutes}m</span> : null}
+                        </td>
+                        <td className="cell-num">{formatCurrency(order.total, currency)}</td>
+                        <td>
+                          <Badge tone={statusTone(order.orderStatus)}>{orderStatusLabel(order.orderStatus)}</Badge>
+                        </td>
+                        <td className="cell-actions">
+                          <Link
+                            href={`/sales?order=${encodeURIComponent(order.id)}`}
+                            className="btn btn--link btn--sm"
+                            aria-label={`Open ${order.orderNumber ?? "order"} in the register`}
+                          >
+                            Open
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="hint" style={{ padding: "22px 16px", margin: 0 }}>
+              {search || orderType ? "No matching orders" : "No orders in this status right now"}
+            </p>
+          )}
         </div>
       ) : (
         <div className={showAll ? "order-board order-board--wide" : "order-board"}>

@@ -19,6 +19,30 @@ export async function listBusinesses(): Promise<Business[]> {
   return items.map(mapBusiness);
 }
 
+export async function createBusiness(input: {
+  name: string;
+  currency?: string;
+  timezone?: string;
+}): Promise<Business> {
+  if (USE_MOCK_API) {
+    return {
+      id: mockId("b"),
+      name: input.name,
+      currency: input.currency ?? "IDR",
+      timezone: input.timezone ?? "Asia/Jakarta",
+    };
+  }
+  const data = await apiRequest<any>("/businesses", {
+    method: "POST",
+    body: {
+      name: input.name,
+      currency: input.currency || null,
+      timezone: input.timezone || null,
+    },
+  });
+  return mapBusiness(data);
+}
+
 export async function getBusiness(): Promise<Business> {
   if (USE_MOCK_API) return { ...mockDb.business };
   const businesses = await listBusinesses();

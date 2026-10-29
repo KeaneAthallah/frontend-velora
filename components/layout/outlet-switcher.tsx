@@ -34,7 +34,7 @@ export function OutletSwitcher({ compact = false }: { compact?: boolean }) {
       </span>
       <ChevronsUpDown
         aria-hidden="true"
-        style={{ width: 12, height: 12, marginLeft: "auto", flexShrink: 0, color: "hsl(221 13% 54%)" }}
+        style={{ width: 12, height: 12, marginLeft: "auto", flexShrink: 0, color: "hsl(var(--side-ink-3))" }}
       />
     </button>
   );

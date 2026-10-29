@@ -13,6 +13,10 @@ interface BusinessContextValue {
   setOutletId: (id: string) => void;
   refreshOutlets: () => void;
   loading: boolean;
+  /** The outlet list request finished (successfully or not). */
+  outletsChecked: boolean;
+  /** The outlet list request succeeded, so `outlets` is authoritative. */
+  outletsLoaded: boolean;
 }
 
 const Ctx = createContext<BusinessContextValue | null>(null);
@@ -23,6 +27,8 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [outletId, setOutletIdState] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [outletsChecked, setOutletsChecked] = useState(false);
+  const [outletsLoaded, setOutletsLoaded] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const businessId = session?.business.id ?? null;
@@ -31,11 +37,15 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
     if (!session) {
       setOutlets([]);
       setOutletIdState(null);
+      setOutletsChecked(false);
+      setOutletsLoaded(false);
       return;
     }
 
     const fallback = session.outlet.id ? [session.outlet] : [];
     setOutlets(fallback);
+    setOutletsChecked(false);
+    setOutletsLoaded(false);
     const stored = typeof window !== "undefined" ? localStorage.getItem("outletId") : null;
     const initial =
       (stored && fallback.some((outlet) => outlet.id === stored) ? stored : null) ??
@@ -43,12 +53,25 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
       null;
     setOutletIdState(initial);
 
-    if (!has("outlets.view")) return;
+    if (!has("outlets.view")) {
+      // Nothing to verify without permission; treat the check as settled so the
+      // app does not wait on a request that will never run.
+      setOutletsChecked(true);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     listOutlets()
       .then((rows) => {
-        if (cancelled || !rows.length) return;
+        if (cancelled) return;
+        setOutletsLoaded(true);
+        if (!rows.length) {
+          // The business exists but has no outlets yet.
+          setOutlets([]);
+          setOutletIdState(null);
+          if (typeof window !== "undefined") localStorage.removeItem("outletId");
+          return;
+        }
         setOutlets(rows);
         const saved = typeof window !== "undefined" ? localStorage.getItem("outletId") : null;
         const next =
@@ -63,7 +86,9 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
         // outlet rather than blocking the app on an optional list request.
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (cancelled) return;
+        setLoading(false);
+        setOutletsChecked(true);
       });
 
     return () => {
@@ -80,8 +105,18 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<BusinessContextValue>(() => {
     const outlet = outlets.find((entry) => entry.id === outletId) ?? session?.outlet ?? null;
-    return { outlets, outletId, outlet, businessId, setOutletId, refreshOutlets, loading };
-  }, [outlets, outletId, businessId, session, loading]);
+    return {
+      outlets,
+      outletId,
+      outlet,
+      businessId,
+      setOutletId,
+      refreshOutlets,
+      loading,
+      outletsChecked,
+      outletsLoaded,
+    };
+  }, [outlets, outletId, businessId, session, loading, outletsChecked, outletsLoaded]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
@@ -97,6 +132,8 @@ export function useBusiness() {
       setOutletId: () => {},
       refreshOutlets: () => {},
       loading: false,
+      outletsChecked: false,
+      outletsLoaded: false,
     } satisfies BusinessContextValue;
   }
   return ctx;

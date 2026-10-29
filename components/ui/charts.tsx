@@ -277,3 +277,54 @@ export function CategoryBars({
     </div>
   );
 }
+
+/**
+ * A compact, axis-free trend line for KPI cards. It draws the same shape the
+ * full chart does, so a card and the chart below it never disagree.
+ */
+export function Sparkline({
+  values,
+  tone = "up",
+  width = 64,
+  height = 40,
+  ariaLabel,
+}: {
+  values: number[];
+  tone?: "up" | "down" | "flat";
+  width?: number;
+  height?: number;
+  ariaLabel?: string;
+}) {
+  const path = React.useMemo(() => {
+    const points = values.filter((value) => Number.isFinite(value));
+    if (points.length < 2) return null;
+    const min = Math.min(...points);
+    const max = Math.max(...points);
+    const span = max - min || 1;
+    const stepX = width / (points.length - 1);
+    return points
+      .map((value, index) => {
+        const x = index * stepX;
+        const y = height - 2 - ((value - min) / span) * (height - 4);
+        return `${index === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`;
+      })
+      .join(" ");
+  }, [values, width, height]);
+
+  if (!path) return null;
+
+  return (
+    <svg
+      className="sparkline"
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      fill="none"
+      role="img"
+      aria-label={ariaLabel}
+      data-tone={tone === "down" ? "down" : undefined}
+    >
+      <path d={path} stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
