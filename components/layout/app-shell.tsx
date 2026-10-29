@@ -28,10 +28,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [mobileNavOpen]);
 
   React.useEffect(() => {
-    if (!loading && !session) {
-      const next = encodeURIComponent(pathname || "/");
-      router.replace(`/login?next=${next}`);
+    if (loading || session) return;
+    // The root route is the public front door: signed-out visitors get the
+    // landing page, while every other app route sends them to sign in.
+    if (pathname === "/") {
+      router.replace("/landing");
+      return;
     }
+    const next = encodeURIComponent(pathname || "/");
+    router.replace(`/login?next=${next}`);
   }, [loading, session, router, pathname]);
 
   React.useEffect(() => {
