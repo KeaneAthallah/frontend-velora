@@ -5,8 +5,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "./theme-provider";
 import { AuthProvider } from "@/lib/auth/auth-context";
 import { BusinessProvider } from "@/lib/business/context";
+import { OfflineProvider } from "@/lib/offline/provider";
 import { ToastProvider } from "@/components/ui/toast";
 import { MockDataToggle } from "@/components/dev/mock-data-toggle";
+import { OfflineServiceWorker } from "@/components/offline/service-worker";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [client] = useState(
@@ -23,8 +25,13 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <AuthProvider>
           <BusinessProvider>
             <ToastProvider>
-              {children}
-              <MockDataToggle />
+              {/* Needs the query client (to invalidate after a sync) and the
+                  toast provider (to announce results). */}
+              <OfflineProvider>
+                {children}
+                <MockDataToggle />
+                <OfflineServiceWorker />
+              </OfflineProvider>
             </ToastProvider>
           </BusinessProvider>
         </AuthProvider>

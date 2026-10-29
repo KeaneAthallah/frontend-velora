@@ -79,43 +79,19 @@ function isCacheablePath(path: string) {
   return OFFLINE_CACHE_PATHS.some((prefix) => clean === prefix || clean.startsWith(`${prefix}/`));
 }
 
-function idleCacheSaveTimeoutMs() {
-  return 15_000;
-}
-
-let lastCacheableBody: OfflineCacheEntry | null = null;
-let lastCacheablePath: string | null = null;
-let cacheSaveTimer: ReturnType<typeof setTimeout> | null = null;
-
-function startCacheSaveTimer() {
-  if (cacheSaveTimer != null) return;
-  cacheSaveTimer = setTimeout(() => {
-    cacheSaveTimer = null;
-    if (lastCacheableBody == null || lastCacheablePath == null) return;
-    try {
-      localStorage.setItem(`velora_offline_cache_${shortHash(lastCacheablePath)}`, JSON.stringify(lastCacheableBody));
-      announceOfflineCacheUse();
-    } catch {
-      /* Private browsing / quota failures are not worth surfacing during checkout. */
-    }
-    lastCacheableBody = null;
-    lastCacheablePath = null;
-  }, idleCacheSaveTimeoutMs());
-}
-
-function scheduleCacheSave(path: string, body: OfflineCacheEntry | null) {
-  lastCacheablePath = path;
-  lastCacheableBody = body;
-  startCacheSaveTimer();
-}
-
-function invalidateCacheSaveTimer() {
-  if (cacheSaveTimer != null) {
-    clearTimeout(cacheSaveTimer);
-    cacheSaveTimer = null;
+/**
+ * Save a cacheable GET response straight away. The session (`/me`) is what
+ * lets a reloaded register stay signed in with no network, so a delayed or
+ * best-effort write would drop it exactly when it is needed.
+ */
+function writeOfflineCache(path: string, data: string) {
+  if (typeof window === "undefined") return;
+  try {
+    const entry: OfflineCacheEntry = { ok: true, data };
+    localStorage.setItem(`velora_offline_cache_${shortHash(path)}`, JSON.stringify(entry));
+  } catch {
+    /* Private browsing / quota failures are not worth surfacing during checkout. */
   }
-  lastCacheableBody = null;
-  lastCacheablePath = null;
 }
 
 export function getAccessToken(): string | null {
@@ -153,16 +129,41 @@ export async function apiRequest<T>(path: string, opts: RequestOptions = {}): Pr
   if (controller && timeoutMs != null && timeoutMs > 0) {
     setTimeout(() => controller.abort(), timeoutMs);
   }
-  const res = await fetch(url, {
-    method,
-    headers: finalHeaders,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-    credentials: "omit",
-    signal: effectiveSignal,
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method,
+      headers: finalHeaders,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      credentials: "omit",
+      signal: effectiveSignal,
+    });
+  } catch (error) {
+    // The request never reached the server. Reads the register already made
+    // (the session, above all) keep answering from the saved copy; everything
+    // else fails as unreachable so callers can queue instead of guessing.
+    if (method === "GET" && isCacheablePath(path)) {
+      const cached = readOfflineCache(path);
+      if (cached?.ok) {
+        try {
+          const data = JSON.parse(cached.data) as T;
+          announceOfflineCacheUse();
+          return data;
+        } catch {
+          /* Corrupt entry: fall through to the unreachable error. */
+        }
+      }
+    }
+    const aborted = error instanceof DOMException && error.name === "AbortError";
+    throw new ApiException({
+      status: 0,
+      code: aborted ? "REQUEST_TIMEOUT" : "NETWORK_ERROR",
+      message: aborted ? "The server took too long to answer" : "The server could not be reached",
+      details: error,
+    });
+  }
 
   if (res.status === 204) {
-    invalidateCacheSaveTimer();
     return undefined as T;
   }
 
@@ -174,28 +175,23 @@ export async function apiRequest<T>(path: string, opts: RequestOptions = {}): Pr
   }
 
   if (!res.ok) {
-    invalidateCacheSaveTimer();
     throw new ApiException(toApiError(res, parsed));
   }
 
   if (parsed && typeof parsed === "object" && "success" in (parsed as Record<string, unknown>)) {
     const env = parsed as { success: boolean; data?: unknown; message?: string; code?: string; errors?: unknown };
     if (env.success === false) {
-      invalidateCacheSaveTimer();
       throw new ApiException({ status: res.status, code: env.code, message: env.message ?? "Request failed", details: env.errors });
     }
     const result = (env.data as T) ?? (undefined as T);
 
     if (method === "GET" && isCacheablePath(path)) {
-      scheduleCacheSave(path, { ok: true, data: JSON.stringify(result) });
-    } else {
-      invalidateCacheSaveTimer();
+      writeOfflineCache(path, JSON.stringify(result));
     }
 
     return result;
   }
 
-  invalidateCacheSaveTimer();
   return parsed as T;
 }
 

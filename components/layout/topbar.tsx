@@ -19,25 +19,18 @@ import { Avatar, DropdownMenu, IconButton, MenuItem, MenuLabel, MenuSeparator } 
 import { useTheme } from "@/components/providers/theme-provider";
 import { useAuth } from "@/lib/auth/auth-context";
 import { useOffline } from "@/lib/offline/provider";
-import { formatRelative } from "@/lib/formatting/currency";
+import { OfflineStatus } from "./offline-status";
 import { OutletSwitcher } from "./outlet-switcher";
 
 export function Topbar({ onMenu, onSearch }: { onMenu: () => void; onSearch: (viaKeyboard?: boolean) => void }) {
   const router = useRouter();
   const { theme, resolved, setTheme } = useTheme();
   const { session, signOut } = useAuth();
-  const { online, pending, failed, lastSyncedAt } = useOffline();
+  // The pill itself lives in OfflineStatus; the bell only needs the count.
+  const { pending, failed } = useOffline();
 
   const ThemeIcon = resolved === "dark" ? Moon : Sun;
   const attention = pending + failed;
-
-  const onlineLabel = online
-    ? lastSyncedAt
-      ? `Online · synced ${formatRelative(lastSyncedAt)}`
-      : "Online"
-    : attention > 0
-      ? `Offline · ${attention} queued`
-      : "Offline";
 
   return (
     <header className="topbar">
@@ -58,9 +51,7 @@ export function Topbar({ onMenu, onSearch }: { onMenu: () => void; onSearch: (vi
 
       <div className="topbar__spacer" />
 
-      <span className="topbar__online hide-mobile" data-offline={online ? undefined : "true"}>
-        {onlineLabel}
-      </span>
+      <OfflineStatus />
 
       <div className="hide-mobile">
         <OutletSwitcher compact />

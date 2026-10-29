@@ -1,14 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, CloudUpload, RefreshCw, Trash2, WifiOff } from "lucide-react";
+import { AlertTriangle, CloudUpload, RefreshCw, Trash2 } from "lucide-react";
 import { Badge, Button, EmptyState } from "@/components/ui/primitives";
 import { Sheet } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import { useOffline } from "@/lib/offline/provider";
 import { queuedSaleTotal } from "@/lib/offline/queue";
 import { useAuth } from "@/lib/auth/auth-context";
-import { formatCurrency } from "@/lib/formatting/currency";
+import { formatCurrency, formatRelative } from "@/lib/formatting/currency";
 
 function formatMoment(value?: string | null) {
   if (!value) return null;
@@ -25,8 +25,9 @@ export function OfflineStatus() {
   const currency = session?.business.currency ?? "IDR";
   const [open, setOpen] = React.useState(false);
 
+  // Anything waiting for a human (a refusal) or for the network keeps the pill
+  // visible on phones; a healthy till only shows it on wider screens.
   const attention = !online || pending > 0 || failed > 0 || syncing;
-  if (!attention) return null;
 
   const label = !online
     ? pending > 0
@@ -36,33 +37,24 @@ export function OfflineStatus() {
       ? "Syncing…"
       : failed > 0
         ? `${failed} refused`
-        : `${pending} queued`;
-
-  const tone = !online ? "warning" : failed > 0 ? "danger" : "info";
+        : pending > 0
+          ? `${pending} queued`
+          : lastSyncedAt
+            ? `Online · synced ${formatRelative(lastSyncedAt)}`
+            : "Online";
 
   return (
     <>
       <button
         type="button"
-        className="topbar__status"
+        className={attention ? "topbar__online" : "topbar__online hide-mobile"}
+        data-offline={online ? undefined : "true"}
+        data-attention={attention ? "true" : undefined}
         onClick={() => setOpen(true)}
-        aria-label={`Offline status: ${label}`}
+        aria-label={`Connection status: ${label}. Open the offline queue.`}
         title="Offline queue"
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-          padding: "4px 8px",
-          borderRadius: 999,
-          border: "1px solid var(--line)",
-          background: "var(--surface-2)",
-          cursor: "pointer",
-        }}
       >
-        {online ? <CloudUpload aria-hidden="true" size={14} /> : <WifiOff aria-hidden="true" size={14} />}
-        <Badge tone={tone} dot>
-          {label}
-        </Badge>
+        {label}
       </button>
 
       <Sheet

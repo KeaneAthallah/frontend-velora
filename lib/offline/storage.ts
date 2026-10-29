@@ -130,14 +130,14 @@ export async function queueReadAll<T>(): Promise<T[]> {
 }
 
 export async function queueWrite<T extends { id: string }>(entry: T): Promise<void> {
-  const stored = await withStore(QUEUE_STORE, "readwrite", (store) => {
+  await withStore(QUEUE_STORE, "readwrite", (store) => {
     store.put(entry);
     return null;
   });
+  // The localStorage copy is the fallback for browsers that refuse IndexedDB,
+  // so it is written either way.
   const local = readLocal<T[]>("queue") ?? [];
-  const next = [...local.filter((row) => row.id !== entry.id), entry];
-  if (stored === null) writeLocal("queue", next);
-  else writeLocal("queue", next);
+  writeLocal("queue", [...local.filter((row) => row.id !== entry.id), entry]);
 }
 
 export async function queueRemove(id: string): Promise<void> {

@@ -942,6 +942,9 @@ hr {
   margin: 0 auto;
   padding: 24px var(--gutter) 56px;
   display: grid;
+  /* Without an explicit minmax(0, 1fr) track the column grows to the widest
+     child's min-content, so a wide table pushes the whole page sideways. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
   align-content: start;
 }
@@ -2303,6 +2306,18 @@ hr {
 .topbar__online[data-offline="true"] {
   background: hsl(var(--danger-bg));
   color: hsl(var(--danger));
+}
+button.topbar__online {
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+button.topbar__online:hover {
+  filter: brightness(0.96);
+}
+button.topbar__online:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
 }
 .topbar__notify {
   position: relative;

@@ -43,6 +43,8 @@ import { previewPromotion } from "@/lib/api/promotions";
 import { getLoyaltyProgram } from "@/lib/api/loyalty";
 import { listTaxRates } from "@/lib/api/tax";
 import { checkout, type CheckoutRequest } from "@/lib/api/sales";
+import { isNetworkError } from "@/lib/api/client";
+import { enqueueQueuedSale, queuedSaleTotal, type QueuedSale } from "@/lib/offline/queue";
 import { checkoutOrder, createOrder, getOrder, updateOrder } from "@/lib/api/orders";
 import { listCustomers } from "@/lib/api/customers";
 import { stockByOutlet } from "@/lib/api/inventory";
@@ -58,7 +60,7 @@ import type {
   TaxRate,
   Transaction,
 } from "@/lib/api/types";
-import { formatCurrency, formatNumber } from "@/lib/formatting/currency";
+import { formatCurrency, formatNumber, formatRelative } from "@/lib/formatting/currency";
 import { initials } from "@/components/ui/primitives";
 import { useBusiness } from "@/lib/business/context";
 import { useAuth, usePermissions } from "@/lib/auth/auth-context";
@@ -138,6 +140,20 @@ const EMPTY_FULFILMENT: OrderFulfilment = {
   instructions: "",
 };
 
+/**
+ * A checkout that could not reach the API and was stored on the device instead.
+ * Carries the queue entry so the caller can confirm what was kept.
+ */
+class QueuedSaleError extends Error {
+  readonly entry: QueuedSale;
+
+  constructor(entry: QueuedSale) {
+    super("The sale was saved on this device");
+    this.name = "QueuedSaleError";
+    this.entry = entry;
+  }
+}
+
 function cartStorageKey(outletId: string | null) {
   return `velora_pos_cart_${outletId ?? "default"}`;
 }
@@ -198,6 +214,7 @@ export default function SalesPage() {
   const [splitOpen, setSplitOpen] = React.useState(false);
   const [splitLines, setSplitLines] = React.useState<SplitLine[]>([]);
   const [success, setSuccess] = React.useState<Transaction | null>(null);
+  const [queuedSale, setQueuedSale] = React.useState<QueuedSale | null>(null);
   const [clearOpen, setClearOpen] = React.useState(false);
   const [actionError, setActionError] = React.useState<string | null>(null);
   const [picker, setPicker] = React.useState<{ product: Product; groups: ModifierGroup[] } | null>(null);
@@ -617,6 +634,10 @@ export default function SalesPage() {
   };
 
   const mutation = useMutation({
+    // The default "online" mode would park the mutation in memory until the
+    // connection returns, which loses it on a reload. Run it while offline so
+    // the register can hand the sale to the durable queue instead.
+    networkMode: "always",
     mutationFn: async (): Promise<Transaction> => {
       if (!outletId || !session) throw new Error("A cashier and outlet are required");
       if (!cart.length) throw new Error("Add at least one item to the order");
@@ -671,7 +692,17 @@ export default function SalesPage() {
         redeemPoints: discounts?.points || undefined,
       };
 
-      return checkout(request);
+      try {
+        return await checkout(request);
+      } catch (error) {
+        // Only a sale that never reached the server may be queued; a refusal
+        // (stock, tax, a closed shift) has to be shown to the cashier.
+        if (!isNetworkError(error)) throw error;
+        // The queued request keeps this idempotency key, so the replay can
+        // create the sale at most once however often it is retried.
+        const entry = await enqueueQueuedSale(request);
+        throw new QueuedSaleError(entry);
+      }
     },
     onSuccess: (transaction) => {
       saveCartAfterSuccess();
@@ -711,6 +742,29 @@ export default function SalesPage() {
       window.setTimeout(() => searchRef.current?.focus(), 100);
     },
     onError: (error) => {
+      if (error instanceof QueuedSaleError) {
+        // The sale is durable on this device, so the register can serve the
+        // next guest. The queue keeps the key; the register drops it.
+        saveCartAfterSuccess();
+        setCart([]);
+        setCustomer(null);
+        setResumedOrder(null);
+        setOrderParam("");
+        replaceSearchParam("order", "");
+        setFulfilment(EMPTY_FULFILMENT);
+        setTableId("");
+        checkoutKeyRef.current = null;
+        saveKeyRef.current = null;
+        setActionError(null);
+        resetPayment();
+        setQueuedSale(error.entry);
+        push({
+          title: "Sale queued offline",
+          description: "It is saved on this device and is sent automatically when the connection returns.",
+          variant: "warning",
+        });
+        return;
+      }
       setActionError(error instanceof Error ? error.message : "The sale could not be completed");
     },
   });
@@ -1822,6 +1876,49 @@ export default function SalesPage() {
               <div className="ledger__row ledger__row--total">
                 <dt>Receipt</dt>
                 <dd className="mono">{success.receiptNumber}</dd>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </Dialog>
+
+      <Dialog
+        open={Boolean(queuedSale)}
+        onClose={() => setQueuedSale(null)}
+        title="Sale queued offline"
+        description={queuedSale ? formatCurrency(queuedSaleTotal(queuedSale), currency) : undefined}
+        width={450}
+        footer={
+          <Button variant="primary" onClick={() => setQueuedSale(null)}>
+            Keep selling
+          </Button>
+        }
+      >
+        {queuedSale ? (
+          <div className="stack" style={{ gap: 16 }}>
+            <div style={{ textAlign: "center" }}>
+              <div className="eyebrow">Saved on this device</div>
+              <div className="num" style={{ fontSize: 30, fontWeight: 700, letterSpacing: "-0.04em", marginTop: 2 }}>
+                {formatCurrency(queuedSaleTotal(queuedSale), currency)}
+              </div>
+              <p className="hint" style={{ marginTop: 5 }}>
+                {queuedSale.request.items.reduce((sum, item) => sum + item.quantity, 0)} items ·{" "}
+                {(queuedSale.request.paymentMethod ?? "cash").toUpperCase()}
+              </p>
+            </div>
+            <div className="alert alert--warning" role="status">
+              The register could not reach the server, so this sale is waiting on this till with its original
+              idempotency key. It is sent automatically when the connection returns; a retry can never charge the guest
+              twice. The topbar pill shows the queue — open it to retry or discard a sale the server refuses.
+            </div>
+            <div className="ledger">
+              <div className="ledger__row">
+                <dt>Queued</dt>
+                <dd>{formatRelative(queuedSale.createdAt)}</dd>
+              </div>
+              <div className="ledger__row">
+                <dt>Status</dt>
+                <dd>Waiting for a connection</dd>
               </div>
             </div>
           </div>
