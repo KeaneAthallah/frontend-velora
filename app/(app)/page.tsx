@@ -1,5 +1,8 @@
-import { redirect } from "next/navigation";
+import OverviewPage from "./dashboard/page.client";
 
-export default function RootRedirect() {
-  redirect("/landing");
+// Route segment configs must live in Server Component modules.
+export const instant = false;
+
+export default function Page() {
+  return <OverviewPage />;
 }
