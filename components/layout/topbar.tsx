@@ -19,6 +19,7 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { useBusiness } from "@/lib/business/context";
 import { navTrail } from "@/lib/navigation";
 import { OutletSwitcher } from "./outlet-switcher";
+import { OfflineStatus } from "./offline-status";
 
 export function Topbar({ onMenu, onSearch }: { onMenu: () => void; onSearch: (viaKeyboard?: boolean) => void }) {
   const pathname = usePathname();

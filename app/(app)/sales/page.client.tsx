@@ -1,8 +1,6 @@
 "use client";
 
-// Opt out of instant-navigation validation: these pages render data-dependent client UI.
 export const instant = false;
-
 
 import * as React from "react";
 import Link from "next/link";
@@ -44,7 +42,7 @@ import { listPaymentMethods } from "@/lib/api/payments";
 import { previewPromotion } from "@/lib/api/promotions";
 import { getLoyaltyProgram } from "@/lib/api/loyalty";
 import { listTaxRates } from "@/lib/api/tax";
-import { checkout } from "@/lib/api/sales";
+import { checkout, type CheckoutRequest } from "@/lib/api/sales";
 import { checkoutOrder, createOrder, getOrder, updateOrder } from "@/lib/api/orders";
 import { listCustomers } from "@/lib/api/customers";
 import { stockByOutlet } from "@/lib/api/inventory";
@@ -184,7 +182,6 @@ export default function SalesPage() {
   const { outletId, outlet } = useBusiness();
   const { push } = useToast();
   const queryClient = useQueryClient();
-
   const [search, setSearch] = React.useState("");
   const [category, setCategory] = React.useState("all");
   const [cart, setCart] = React.useState<CartLine[]>([]);
@@ -229,8 +226,6 @@ export default function SalesPage() {
 
   React.useEffect(() => {
     if (!cartLoaded) return;
-    // A resumed open order is owned by the server; do not leak it into the
-    // register's saved cart, or a later visit would reopen stale lines.
     if (resumedOrder) return;
     const key = cartStorageKey(outletId);
     if (loadedKeyRef.current !== key) return;
@@ -302,7 +297,6 @@ export default function SalesPage() {
     staleTime: 15_000,
   });
 
-  // /sales?table=ID&type=dine_in is the deep link used by the floor plan.
   React.useEffect(() => {
     if (!tableParamReady || !tableParam) return;
     if (orderParam) return;
@@ -425,7 +419,6 @@ export default function SalesPage() {
     }
   }, [methodsQuery.data, paymentMethod]);
 
-  // Keep the split lines usable when a method is deactivated mid-shift.
   React.useEffect(() => {
     if (!splitLines.length || !methodsQuery.data?.length) return;
     const active = methodsQuery.data.filter((method) => method.active);
@@ -471,8 +464,6 @@ export default function SalesPage() {
   }, [subtotal, taxRate]);
   const total = taxRate?.type === "exclusive" ? subtotal + tax : subtotal;
 
-  // A promotion or points redemption changes what the customer owes, so the
-  // applied discounts are priced by the server and drive the totals below.
   const effectiveTotal = promoPreview?.total ?? total;
   const effectiveTax = promoPreview?.tax ?? tax;
   const promotionDiscount = promoPreview?.promotionDiscount ?? 0;
@@ -615,7 +606,7 @@ export default function SalesPage() {
   };
 
   const mutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (): Promise<Transaction> => {
       if (!outletId || !session) throw new Error("A cashier and outlet are required");
       if (!cart.length) throw new Error("Add at least one item to the order");
       if (!paymentMethod) throw new Error("Choose a payment method");
@@ -654,7 +645,7 @@ export default function SalesPage() {
             ? crypto.randomUUID()
             : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       }
-      return checkout({
+      const request: CheckoutRequest = {
         outletId,
         cashierId: session.user.id,
         customerId: customer?.id,
@@ -667,10 +658,12 @@ export default function SalesPage() {
         fulfilment: cleanFulfilment(),
         promotionCode: discounts?.code || undefined,
         redeemPoints: discounts?.points || undefined,
-      });
+      };
+
+      return checkout(request);
     },
     onSuccess: (transaction) => {
-      const pending = transaction.paymentStatus !== "paid";
+      saveCartAfterSuccess();
       setSuccess(transaction);
       setCart([]);
       setCustomer(null);
@@ -683,7 +676,7 @@ export default function SalesPage() {
       saveKeyRef.current = null;
       setActionError(null);
       resetPayment();
-      if (pending) {
+      if (transaction.paymentStatus !== "paid") {
         push({
           title: "Sale recorded - payment not recorded",
           description: `${transaction.receiptNumber} was saved without a payment. Void it in Transactions if payment cannot be confirmed.`,
@@ -740,6 +733,7 @@ export default function SalesPage() {
         description: `${order.orderNumber ?? order.receiptNumber} is waiting on the order board.`,
         variant: "success",
       });
+      saveCartAfterSuccess();
       setCart([]);
       setCustomer(null);
       setFulfilment(EMPTY_FULFILMENT);
@@ -865,6 +859,15 @@ export default function SalesPage() {
   };
 
   const setupNeeded = !productsQuery.isLoading && products.length === 0;
+
+  const saveCartAfterSuccess = () => {
+    if (!cart.length || !outletId) return;
+    try {
+      window.sessionStorage.setItem(cartStorageKey(outletId), JSON.stringify(cart));
+    } catch {
+      /* Same private-browsing carve-out as the cart-lifecycle effect. */
+    }
+  };
 
   return (
     <>
@@ -1133,9 +1136,7 @@ export default function SalesPage() {
                         key={table.id}
                         active={tableId === table.id}
                         onClick={() => setTableId(table.id)}
-                        title={`${table.name} · ${table.seats} seats${
-                          table.manualStatus === "reserved" ? " · reserved" : ""
-                        }`}
+                        title={`${table.name} · ${table.seats} seats${table.manualStatus === "reserved" ? " · reserved" : ""}`}
                       >
                         {table.name}
                       </ChipButton>

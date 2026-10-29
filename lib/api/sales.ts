@@ -221,7 +221,7 @@ export async function voidTransaction(id: string, reason: string): Promise<void>
   await apiRequest<void>(`/sales/${id}/void`, { method: "POST", body: { reason } });
 }
 
-export async function checkout(request: {
+export type CheckoutRequest = {
   outletId: string;
   cashierId: string;
   customerId?: string;
@@ -236,7 +236,9 @@ export async function checkout(request: {
   fulfilment?: OrderFulfilment;
   promotionCode?: string;
   redeemPoints?: number;
-}): Promise<Transaction> {
+};
+
+export async function checkout(request: CheckoutRequest): Promise<Transaction> {
   const orderType = request.orderType ?? "takeaway";
   if (USE_MOCK_API) {
     const table = request.tableId
@@ -382,6 +384,7 @@ export async function checkout(request: {
     method: "POST",
     body: saleBody,
     idempotencyKey: request.idempotencyKey,
+    timeoutMs: 12_000,
   });
 
   // The sale total is authoritative (tax is rounded per line server-side), so
@@ -399,8 +402,9 @@ export async function checkout(request: {
       })),
       idempotency_key: `${request.idempotencyKey}:payment`,
     },
+    timeoutMs: 12_000,
   });
 
-  const full = await apiRequest<any>(`/sales/${sale.id}`);
+  const full = await apiRequest<any>(`/sales/${sale.id}`, { timeoutMs: 12_000 });
   return mapSale({ ...full, promotion: full.promotion ?? sale.promotion });
 }
