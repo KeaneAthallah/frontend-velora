@@ -21,11 +21,32 @@ const TOKEN_KEY = "velora_access_token";
 
 /**
  * GET responses the register can keep serving after the network drops.
- * Deliberately a short list: catalogue, cash setup and the session, never
- * ledgers that would look authoritative while stale.
+ *
+ * Rules for adding a path here:
+ * - Must be read-only catalogue or setup data (never a ledger or live balance
+ *   that would look authoritative while stale).
+ * - Outlet-specific paths (e.g. `/menu?outlet_id=…`) are naturally keyed by
+ *   their full URL, so each outlet gets its own cache slot automatically.
+ * - Avoid adding broad prefixes like `/orders` or `/sales` — those contain
+ *   real-time state that must never be served stale.
+ *
+ * Covered:
+ *   /me                 — session; lets a reloaded register stay signed in
+ *   /products           — catalogue; the register needs product tiles offline
+ *   /categories         — category filter chips on the register
+ *   /menu               — modifiers, availability, daypart pricing per outlet
+ *   /tax-rates          — needed to price a new direct sale offline
+ *   /payment-methods    — needed to render the tender screen offline
+ *   /inventory/balances — per-outlet stock levels for the sell screen
  */
 const OFFLINE_CACHE_PATHS = [
   "/me",
+  "/products",
+  "/categories",
+  "/menu",
+  "/tax-rates",
+  "/payment-methods",
+  "/inventory/balances",
 ];
 
 type OfflineCacheListener = (usedAt: string) => void;
