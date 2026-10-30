@@ -25,6 +25,7 @@ export type NavItem = {
   permission?: string;
   permissions?: string[];
   description?: string;
+  count?: number;
 };
 
 export type NavGroup = {
@@ -56,6 +57,7 @@ export const navGroups: NavGroup[] = [
         icon: ClipboardList,
         permission: "orders.view",
         description: "Open tabs and the kitchen queue",
+        count: 5,
       },
       {
         label: "Kitchen",
@@ -110,6 +112,7 @@ export const navGroups: NavGroup[] = [
         icon: Boxes,
         permission: "inventory.view",
         description: "Stock levels and movements",
+        count: 4,
       },
       {
         label: "Recipes",
@@ -135,7 +138,7 @@ export const navGroups: NavGroup[] = [
     ],
   },
   {
-    label: "Relationships",
+    label: "People & insight",
     items: [
       {
         label: "Customers",
@@ -151,11 +154,6 @@ export const navGroups: NavGroup[] = [
         permission: "promotions.view",
         description: "Discount codes and automatic offers",
       },
-    ],
-  },
-  {
-    label: "Analyze",
-    items: [
       {
         label: "Reports",
         href: "/reports",
@@ -163,11 +161,6 @@ export const navGroups: NavGroup[] = [
         permission: "reports.view",
         description: "Sales performance and detail",
       },
-    ],
-  },
-  {
-    label: "Manage",
-    items: [
       {
         label: "Team",
         href: "/employees",

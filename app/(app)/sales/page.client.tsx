@@ -45,6 +45,7 @@ import { listTaxRates } from "@/lib/api/tax";
 import { checkout, type CheckoutRequest } from "@/lib/api/sales";
 import { isNetworkError } from "@/lib/api/client";
 import { enqueueQueuedSale, queuedSaleTotal, type QueuedSale } from "@/lib/offline/queue";
+import { useOffline } from "@/lib/offline/provider";
 import { checkoutOrder, createOrder, getOrder, updateOrder } from "@/lib/api/orders";
 import { listCustomers } from "@/lib/api/customers";
 import { stockByOutlet } from "@/lib/api/inventory";
@@ -192,12 +193,42 @@ function readCart(outletId: string | null): CartLine[] {
   }
 }
 
+function productMonogramTone(product: Product): string {
+  const cat = (product.categoryName || "").toLowerCase();
+  const name = product.name.toLowerCase();
+  if (
+    cat.includes("tea") ||
+    cat.includes("matcha") ||
+    cat.includes("cold") ||
+    cat.includes("beverage") ||
+    cat.includes("juice") ||
+    name.includes("tea") ||
+    name.includes("matcha")
+  ) {
+    return "sq--green";
+  }
+  if (
+    cat.includes("food") ||
+    cat.includes("pastry") ||
+    cat.includes("bakery") ||
+    cat.includes("snack") ||
+    cat.includes("croissant") ||
+    cat.includes("nasi") ||
+    cat.includes("mie") ||
+    cat.includes("pisang")
+  ) {
+    return "sq--amber";
+  }
+  return "sq--purple";
+}
+
 export default function SalesPage() {
   const { has } = usePermissions();
   const { session } = useAuth();
   const { outletId, outlet } = useBusiness();
   const { push } = useToast();
   const queryClient = useQueryClient();
+  const { online } = useOffline();
   const [search, setSearch] = React.useState("");
   const [category, setCategory] = React.useState("all");
   const [cart, setCart] = React.useState<CartLine[]>([]);
@@ -216,6 +247,7 @@ export default function SalesPage() {
   const [success, setSuccess] = React.useState<Transaction | null>(null);
   const [queuedSale, setQueuedSale] = React.useState<QueuedSale | null>(null);
   const [clearOpen, setClearOpen] = React.useState(false);
+  const [offlineResumeOpen, setOfflineResumeOpen] = React.useState(false);
   const [actionError, setActionError] = React.useState<string | null>(null);
   const [picker, setPicker] = React.useState<{ product: Product; groups: ModifierGroup[] } | null>(null);
   const [orderType, setOrderType] = React.useState<OrderType>("dine_in");
@@ -1107,7 +1139,10 @@ export default function SalesPage() {
                         {formatNumber(inCart)}
                       </span>
                     ) : null}
-                    <span className="product-tile__mono" aria-hidden="true">
+                    <span
+                      className={`product-tile__mono sq ${out ? "sq--gray" : productMonogramTone(product)}`}
+                      aria-hidden="true"
+                    >
                       {initials(product.name)}
                     </span>
                     <div className="product-tile__body">
@@ -1185,6 +1220,7 @@ export default function SalesPage() {
             </div>
           </div>
 
+          <div className="cart__body">
           <div style={{ padding: "12px 15px 0" }}>
             <div className="eyebrow" style={{ marginBottom: 6 }}>
               Order type
@@ -1483,6 +1519,7 @@ export default function SalesPage() {
               </div>
             )}
           </div>
+          </div>
 
           <div className="cart__summary">
             <div className="cart__row">
@@ -1737,6 +1774,13 @@ export default function SalesPage() {
               }
               onClick={() => {
                 setActionError(null);
+                // Open tabs require the server to resolve their current state
+                // before they can be checked out. Refuse early with a clear
+                // explanation rather than letting the network call fail silently.
+                if (resumedOrder && !online) {
+                  setOfflineResumeOpen(true);
+                  return;
+                }
                 mutation.mutate();
               }}
             >
@@ -1923,6 +1967,30 @@ export default function SalesPage() {
             </div>
           </div>
         ) : null}
+      </Dialog>
+
+      {/* ── Offline open-tab notice ─────────────────────────────────────── */}
+      <Dialog
+        open={offlineResumeOpen}
+        onClose={() => setOfflineResumeOpen(false)}
+        title="No connection"
+        description={resumedOrder?.orderNumber ?? "Open order"}
+        width={420}
+        footer={
+          <Button variant="primary" onClick={() => setOfflineResumeOpen(false)}>
+            Got it
+          </Button>
+        }
+      >
+        <div className="alert alert--warning" role="status">
+          Checking out an open tab requires a server connection to confirm the
+          current order state. Direct new sales still work offline — the cart
+          queues them automatically and syncs when the connection returns.
+        </div>
+        <p className="hint" style={{ marginTop: 12 }}>
+          Reconnect, then charge the tab. If payment cannot wait, start a new
+          sale instead.
+        </p>
       </Dialog>
     </>
   );

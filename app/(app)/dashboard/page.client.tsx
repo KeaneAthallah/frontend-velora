@@ -197,10 +197,14 @@ function OverviewContent({
             />
           }
           foot={
-            <>
-              <Delta value={changes.netSales} />
-              <span>{period.comparisonLabel}</span>
-            </>
+            comparisonAvailable ? (
+              <>
+                <Delta value={changes.netSales} />
+                <span>{period.comparisonLabel}</span>
+              </>
+            ) : (
+              <span>No earlier period</span>
+            )
           }
         />
         <Stat
@@ -215,10 +219,14 @@ function OverviewContent({
             />
           }
           foot={
-            <>
-              <Delta value={changes.transactions} />
-              <span>{comparisonAvailable ? period.comparisonLabel : "No earlier period to compare"}</span>
-            </>
+            comparisonAvailable ? (
+              <>
+                <Delta value={changes.transactions} />
+                <span>{period.comparisonLabel}</span>
+              </>
+            ) : (
+              <span>No earlier period</span>
+            )
           }
         />
         <Stat
@@ -233,10 +241,14 @@ function OverviewContent({
             />
           }
           foot={
-            <>
-              <Delta value={changes.avgTransaction} />
-              <span>{comparisonAvailable ? period.comparisonLabel : "First recorded period"}</span>
-            </>
+            comparisonAvailable ? (
+              <>
+                <Delta value={changes.avgTransaction} />
+                <span>{period.comparisonLabel}</span>
+              </>
+            ) : (
+              <span>No earlier period</span>
+            )
           }
         />
         <Stat
@@ -251,10 +263,14 @@ function OverviewContent({
             />
           }
           foot={
-            <>
-              <Delta value={changes.itemsSold} />
-              <span>{comparisonAvailable ? period.comparisonLabel : "First recorded period"}</span>
-            </>
+            comparisonAvailable ? (
+              <>
+                <Delta value={changes.itemsSold} />
+                <span>{period.comparisonLabel}</span>
+              </>
+            ) : (
+              <span>No earlier period</span>
+            )
           }
         />
       </div>
@@ -334,6 +350,7 @@ function OverviewContent({
                 data={trend}
                 compare={previousTrend}
                 currency={currency}
+                height={180}
                 ariaLabel={`Net sales by day for ${period.label}. ${formatCurrency(current.netSales, currency)} total.`}
               />
             ) : (

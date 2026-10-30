@@ -25,16 +25,15 @@ export function OutletSwitcher({ compact = false }: { compact?: boolean }) {
       aria-label="Switch outlet"
       title={outlet?.name ?? "Outlet"}
     >
-      <span className="sidebar__outlet-icon">
-        <Building2 aria-hidden="true" />
-      </span>
-      <span className="sidebar__outlet-copy">
-        <b>{outlet?.name ?? (loading ? "Loading outlet…" : "No outlet")}</b>
-        <span>{session.business.name}</span>
+      <span className="sidebar__outlet-copy" style={{ minWidth: 0, flex: 1, textAlign: "left" }}>
+        <b>{session.business.name}</b>
+        <span style={{ fontSize: 11, color: "#A9A4CF", fontWeight: 500 }}>
+          {outlet?.name ?? (loading ? "Loading outlet…" : "No outlet")}
+        </span>
       </span>
       <ChevronsUpDown
         aria-hidden="true"
-        style={{ width: 12, height: 12, marginLeft: "auto", flexShrink: 0, color: "hsl(var(--side-ink-3))" }}
+        style={{ width: 14, height: 14, marginLeft: "auto", flexShrink: 0, color: "#A9A4CF" }}
       />
     </button>
   );

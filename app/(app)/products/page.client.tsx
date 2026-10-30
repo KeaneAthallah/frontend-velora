@@ -139,19 +139,21 @@ export default function ProductsPage() {
       id: "product",
       header: "Product",
       cell: (row) => (
-        <div className="row" style={{ gap: 9 }}>
-          <span className="avatar" aria-hidden="true">
+        <div className="row" style={{ gap: 10 }}>
+          {/* The design marks each row with a 30px tinted monogram, not an avatar. */}
+          <span className="sq sq--purple" aria-hidden="true" style={{ width: 30, height: 30, fontSize: 13 }}>
             {row.name.slice(0, 1).toUpperCase()}
           </span>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontWeight: 600 }}>{row.name}</div>
-            <div className="hint mono" style={{ fontSize: 10.5 }}>
-              {row.sku}
-              {row.barcode ? ` · ${row.barcode}` : ""}
-            </div>
+            <div style={{ fontWeight: 700 }}>{row.name}</div>
           </div>
         </div>
       ),
+    },
+    {
+      id: "sku",
+      header: "SKU",
+      cell: (row) => <span className="mono cell-muted">{row.sku || "—"}</span>,
     },
     {
       id: "category",
@@ -164,39 +166,19 @@ export default function ProductsPage() {
       align: "right",
       cell: (row) => <span className="num" style={{ fontWeight: 600 }}>{formatCurrency(row.price, currency)}</span>,
     },
-    {
-      id: "cost",
-      header: "Cost",
-      align: "right",
-      cell: (row) => <span className="cell-muted num">{formatCurrency(row.cost, currency)}</span>,
-    },
-    {
-      id: "margin",
-      header: "Margin",
-      align: "right",
-      cell: (row) => {
-        if (row.price <= 0) return <span className="hint">—</span>;
-        const margin = ((row.price - row.cost) / row.price) * 100;
-        return (
-          <span className="num" style={{ color: margin < 0 ? "hsl(var(--danger))" : "hsl(var(--ink-2))" }}>
-            {margin.toFixed(1)}%
-          </span>
-        );
-      },
-    },
     ...(has("inventory.view")
       ? [
           {
             id: "stock",
             header: "Stock",
-            align: "right" as const,
             cell: (row: Product) => {
-              if (row.trackInventory === false) return <span className="hint">Untracked</span>;
+              // The design calls recipe-driven products "Recipe-based" rather than untracked.
+              if (row.trackInventory === false) return <span className="cell-muted">Recipe-based</span>;
               const stock = stockMap.get(row.id) ?? 0;
               return (
-                <Badge tone={stock <= 0 ? "danger" : stock <= 10 ? "warning" : "neutral"} dot>
+                <span className="cell-muted num">
                   {formatNumber(stock)} {row.unit ?? "pcs"}
-                </Badge>
+                </span>
               );
             },
           },
@@ -205,11 +187,13 @@ export default function ProductsPage() {
     {
       id: "status",
       header: "Status",
-      cell: (row) => (
-        <Badge tone={row.active ? "success" : "neutral"} dot>
-          {row.active ? "Active" : "Inactive"}
-        </Badge>
-      ),
+      cell: (row) => {
+        const stock = stockMap.get(row.id) ?? 0;
+        if (!row.active) return <Badge tone="neutral">Inactive</Badge>;
+        if (row.trackInventory !== false && stock <= 0) return <Badge tone="danger">Sold out</Badge>;
+        if (row.trackInventory !== false && stock <= 10) return <Badge tone="warning">Low stock</Badge>;
+        return <Badge tone="success">Active</Badge>;
+      },
     },
     ...(canManage
       ? [

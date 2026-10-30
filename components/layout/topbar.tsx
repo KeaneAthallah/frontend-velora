@@ -53,7 +53,7 @@ export function Topbar({ onMenu, onSearch }: { onMenu: () => void; onSearch: (vi
 
       <OfflineStatus />
 
-      <div className="hide-mobile">
+      <div className="topbar__outlet">
         <OutletSwitcher compact />
       </div>
 

@@ -56,15 +56,26 @@ export function Sidebar({
           />
           <span className="sidebar__wordmark">Velora</span>
         </Link>
-        <button
-          type="button"
-          className="icon-btn mobile-nav-close"
-          onClick={onNavigate}
-          aria-label="Close navigation"
-          style={{ marginLeft: "auto", color: "hsl(var(--side-ink-2))" }}
-        >
-          <X aria-hidden="true" />
-        </button>
+        <div className="sidebar__brand-actions">
+          <button
+            type="button"
+            className="sidebar__collapse"
+            onClick={onToggleCollapsed}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {collapsed ? <ChevronsRight aria-hidden="true" /> : <ChevronsLeft aria-hidden="true" />}
+          </button>
+          <button
+            type="button"
+            className="icon-btn mobile-nav-close"
+            onClick={onNavigate}
+            aria-label="Close navigation"
+            style={{ color: "hsl(var(--side-ink-2))" }}
+          >
+            <X aria-hidden="true" />
+          </button>
+        </div>
       </div>
 
       <div className="sidebar__context">
@@ -89,6 +100,11 @@ export function Sidebar({
                   >
                     <item.icon aria-hidden="true" />
                     <span className="nav-item__label">{item.label}</span>
+                    {item.count != null && (
+                      <span className="nav-item__badge" aria-label={`${item.count} ${item.label.toLowerCase()}`}>
+                        {item.count}
+                      </span>
+                    )}
                   </Link>
                 );
               })}
@@ -104,13 +120,9 @@ export function Sidebar({
           </span>
           <span className="sidebar__user-copy">
             <b>{session?.user.name ?? "Account"}</b>
-            <span>{outlet?.name ?? session?.business.name ?? "No outlet"}</span>
+            <span>{session?.user.email ?? outlet?.name ?? "No outlet"}</span>
           </span>
         </div>
-        <button type="button" className="sidebar__collapse" onClick={onToggleCollapsed}>
-          {collapsed ? <ChevronsRight aria-hidden="true" /> : <ChevronsLeft aria-hidden="true" />}
-          <span>{collapsed ? "Expand" : "Collapse"}</span>
-        </button>
       </div>
     </aside>
   );

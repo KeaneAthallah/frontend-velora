@@ -39,6 +39,7 @@ export function Stat({
   spark,
   className,
   emphasis = false,
+  compact = false,
 }: {
   label: React.ReactNode;
   value: React.ReactNode;
@@ -49,9 +50,11 @@ export function Stat({
   spark?: React.ReactNode;
   className?: string;
   emphasis?: boolean;
+  /** Label + value only, at the design's 84px summary height. */
+  compact?: boolean;
 }) {
   return (
-    <div className={cn("stat", spark && "stat--spark", className)}>
+    <div className={cn("stat", spark && "stat--spark", compact && "stat--compact", className)}>
       <div className="stat__label">
         <span>{label}</span>
         {info && <InfoTip label={`About ${typeof label === "string" ? label : "this metric"}`}>{info}</InfoTip>}

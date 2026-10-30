@@ -37,7 +37,7 @@ import { useToast } from "@/components/ui/toast";
 import { adjustStock, listMovements, stockByOutlet } from "@/lib/api/inventory";
 import { listProducts } from "@/lib/api/products";
 import type { InventoryMovement } from "@/lib/api/types";
-import { formatCurrency, formatDateTime, formatNumber } from "@/lib/formatting/currency";
+import { formatCurrency, formatDateTime, formatNumber, formatTime } from "@/lib/formatting/currency";
 import { useBusiness } from "@/lib/business/context";
 import { useAuth, usePermissions } from "@/lib/auth/auth-context";
 import { useDebouncedValue } from "@/lib/use-debounced";
@@ -95,6 +95,13 @@ export default function InventoryPage() {
     staleTime: 20_000,
   });
 
+  const recentMovementsQuery = useQuery({
+    queryKey: ["inventory-recent-movements", outletId],
+    queryFn: () => listMovements({ page: 1, pageSize: 200 }),
+    enabled: has("inventory.view") && tab === "stock",
+    staleTime: 20_000,
+  });
+
   React.useEffect(() => {
     setMovementPage(1);
   }, [movementPageSize, outletId]);
@@ -146,6 +153,15 @@ export default function InventoryPage() {
     });
   }, [lines, debounced, filter]);
 
+  const lastMovement = React.useMemo(() => {
+    // Movements arrive newest first, so the first row seen per item is its latest.
+    const map = new Map<string, InventoryMovement>();
+    (recentMovementsQuery.data?.data ?? []).forEach((movement) => {
+      if (!map.has(movement.productId)) map.set(movement.productId, movement);
+    });
+    return map;
+  }, [recentMovementsQuery.data]);
+
   const totals = React.useMemo(() => {
     return lines.reduce(
       (sum, line) => {
@@ -179,101 +195,72 @@ export default function InventoryPage() {
   const stockColumns: Column<StockLine>[] = [
     {
       id: "product",
-      header: "Product",
-      cell: (row) => (
-        <div>
-          <div style={{ fontWeight: 600 }}>{row.name}</div>
-          <div className="hint mono" style={{ fontSize: 10.5 }}>
-            {row.sku}
-          </div>
-        </div>
-      ),
+      header: "Ingredient",
+      cell: (row) => <span style={{ fontWeight: 700 }}>{row.name}</span>,
     },
     {
       id: "stock",
       header: "On hand",
-      align: "right",
+      cell: (row) => <span className="num">{formatNumber(row.stock)}</span>,
+    },
+    {
+      id: "minimum",
+      header: "Minimum",
       cell: (row) => (
-        <div className="row row-tight" style={{ justifyContent: "flex-end" }}>
-          <span className="num" style={{ fontWeight: 650 }}>
-            {formatNumber(row.stock)}
-          </span>
-          <span className="hint" style={{ margin: 0 }}>
-            {row.unit}
-          </span>
-        </div>
+        <span className="num" title={`Reorder threshold: ${LOW_STOCK} ${row.unit}`}>
+          {formatNumber(LOW_STOCK)}
+        </span>
       ),
+    },
+    {
+      id: "unit",
+      header: "Unit",
+      cell: (row) => <span className="cell-muted">{row.unit}</span>,
+    },
+    {
+      id: "movement",
+      header: "Last movement",
+      cell: (row) => {
+        const movement = lastMovement.get(row.productId);
+        return <span className="cell-muted">{movement ? lastMovementLabel(movement) : "—"}</span>;
+      },
     },
     {
       id: "level",
       header: "Level",
       cell: (row) => {
-        const target = Math.max(LOW_STOCK * 2, 1);
+        const target = Math.max(LOW_STOCK, 1);
         const pct = Math.min(100, Math.round((row.stock / target) * 100));
         const tone = row.stock <= 0 ? "danger" : row.stock <= LOW_STOCK ? "warning" : "success";
         return (
           <div
             className="bar-track"
-            style={{ width: 96 }}
+            style={{ width: 100 }}
             role="img"
-            aria-label={`${pct}% of target`}
+            aria-label={`${pct}% of the ${LOW_STOCK} ${row.unit} minimum`}
           >
             <div className="bar-fill" data-tone={tone} style={{ width: `${Math.max(pct, 3)}%` }} />
           </div>
         );
       },
     },
-    {
-      id: "status",
-      header: "Status",
-      cell: (row) =>
-        row.stock <= 0 ? (
-          <Badge tone="danger" dot>
-            Out of stock
-          </Badge>
-        ) : row.stock <= LOW_STOCK ? (
-          <Badge tone="warning" dot>
-            Low
-          </Badge>
-        ) : (
-          <Badge tone="success" dot>
-            Healthy
-          </Badge>
-        ),
-    },
-    {
-      id: "cost",
-      header: "Value at cost",
-      align: "right",
-      cell: (row) => (
-        <span className="num">{row.cost > 0 ? formatCurrency(row.stock * row.cost, currency) : "—"}</span>
-      ),
-    },
-    {
-      id: "retail",
-      header: "Value at retail",
-      align: "right",
-      cell: (row) => (
-        <span className="cell-muted num">{row.price > 0 ? formatCurrency(row.stock * row.price, currency) : "—"}</span>
-      ),
-    },
     ...(canAdjust
       ? [
           {
             id: "adjust",
-            header: "",
-            align: "right" as const,
+            header: "Action",
             cell: (row: StockLine) => (
-              <Button
-                variant="quiet"
-                size="sm"
+              // The design renders the row action as a text link, not a button.
+              <button
+                type="button"
+                className="btn btn--link btn--sm"
                 onClick={(event) => {
                   event.stopPropagation();
                   openAdjust(row.productId);
                 }}
               >
-                Adjust
-              </Button>
+                {row.stock <= LOW_STOCK ? "Reorder" : "Adjust"}
+              </button>
             ),
           },
         ]
@@ -353,43 +340,30 @@ export default function InventoryPage() {
 
       <div className="grid-4">
         <Stat
-          label="Units on hand"
-          value={formatNumber(totals.units)}
-          info="Sum of units across tracked products at this outlet. Each product contributes its on-hand quantity once."
-          foot={<span>{formatNumber(lines.length)} tracked products</span>}
+          compact
+          label="Items tracked"
+          value={formatNumber(lines.length)}
+          info="Products carrying stock at this outlet. Units on hand across all of them are tracked below."
         />
         <Stat
-          label="Stock value at cost"
+          compact
+          label="Low stock"
+          value={
+            <span style={{ color: "hsl(var(--warning))" }}>{formatNumber(totals.low)}</span>
+          }
+          info={`Tracked products at or below ${LOW_STOCK} units, excluding those already out of stock.`}
+        />
+        <Stat
+          compact
+          label="Out of stock"
+          value={<span style={{ color: "hsl(var(--danger))" }}>{formatNumber(totals.out)}</span>}
+          info="Tracked products with no units left at this outlet."
+        />
+        <Stat
+          compact
+          label="Stock value"
           value={formatCurrency(totals.cost, currency)}
-          info="On-hand units multiplied by each product's cost price. This is the accounting value of stock, not the sum of quantities."
-          foot={
-            <span>
-              {productsWithMissingCost
-                ? `${productsWithMissingCost} products have no cost price`
-                : "Cost prices are complete"}
-            </span>
-          }
-        />
-        <Stat
-          label="Stock value at retail"
-          value={formatCurrency(totals.retail, currency)}
-          info="On-hand units multiplied by each product's selling price. Tax and future discounts are not included."
-          foot={<span>Before tax and markdowns</span>}
-        />
-        <Stat
-          label="Needs attention"
-          value={formatNumber(totals.out + totals.low)}
-          info={`Tracked products at or below ${LOW_STOCK} units, including out-of-stock items.`}
-          foot={
-            <>
-              <Badge tone="danger" dot>
-                {formatNumber(totals.out)} out
-              </Badge>
-              <Badge tone="warning" dot>
-                {formatNumber(totals.low)} low
-              </Badge>
-            </>
-          }
+          info={`On-hand units at cost price — ${formatCurrency(totals.retail, currency)} at retail.${productsWithMissingCost ? ` ${productsWithMissingCost} products have no cost price.` : ""}`}
         />
       </div>
 
@@ -645,8 +619,26 @@ function movementLabel(type: InventoryMovement["type"]) {
   return labels[type] ?? type;
 }
 
-function movementTone(type: InventoryMovement["type"]) {
-  if (type === "sale" || type === "damaged" || type === "missing" || type === "expired" || type === "write_off") {
+// The design states what happened, then when: "Used 14:40", "Delivered 07:30".
+function lastMovementLabel(movement: InventoryMovement) {
+  const verbs: Record<InventoryMovement["type"], string> = {
+    adjustment: "Adjusted",
+    transfer: "Transferred",
+    receive: "Delivered",
+    sale: "Used",
+    return: "Returned",
+    void: "Voided",
+    damaged: "Written off",
+    missing: "Written off",
+    expired: "Written off",
+    write_off: "Written off",
+  };
+  const verb = verbs[movement.type] ?? "Adjusted";
+  const time = formatTime(movement.createdAt);
+  return time ? `${verb} ${time}` : verb;
+}
+
+function movementTone(type: InventoryMovement["type"]) {  if (type === "sale" || type === "damaged" || type === "missing" || type === "expired" || type === "write_off") {
     return "danger" as const;
   }
   if (type === "receive" || type === "return") return "success" as const;

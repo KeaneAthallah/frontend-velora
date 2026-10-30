@@ -50,6 +50,7 @@ import { formatCurrency, formatTime } from "@/lib/formatting/currency";
 import { useBusiness } from "@/lib/business/context";
 import { useAuth, usePermissions } from "@/lib/auth/auth-context";
 import { useDebouncedValue } from "@/lib/use-debounced";
+import { useOffline } from "@/lib/offline/provider";
 
 const COLUMNS: { status: OrderStatus; label: string; hint: string; icon: React.ReactNode }[] = [
   { status: "open", label: "Open", hint: "Taken, not fired", icon: <Clock aria-hidden="true" /> },
@@ -85,12 +86,14 @@ export default function OrdersPage() {
   const { outletId, outlet } = useBusiness();
   const { push } = useToast();
   const queryClient = useQueryClient();
+  const { online } = useOffline();
 
   const [search, setSearch] = React.useState("");
   const [orderType, setOrderType] = React.useState<"" | OrderType>("");
   const [showAll, setShowAll] = React.useState(false);
-  const [view, setView] = React.useState<"board" | "list">("board");
+  const [view, setView] = React.useState<"board" | "list">("list");
   const [statusTab, setStatusTab] = React.useState<"all" | OrderStatus>("all");
+  const [selectedOrderId, setSelectedOrderId] = React.useState<string | null>(null);
   const [checkoutTarget, setCheckoutTarget] = React.useState<Transaction | null>(null);
   const [paymentMethod, setPaymentMethod] = React.useState("cash");
   const [checkoutReference, setCheckoutReference] = React.useState("");
@@ -266,6 +269,8 @@ export default function OrdersPage() {
   const listRows = (statusTab === "all" ? orders : orders.filter((order) => order.orderStatus === statusTab))
     .slice()
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  const selectedOrder = orders.find((order) => order.id === selectedOrderId) ?? null;
 
   const statusTone = (status?: OrderStatus) => {
     if (status === "in_kitchen") return "warning" as const;
@@ -517,13 +522,8 @@ export default function OrdersPage() {
           />
         </div>
       ) : view === "list" ? (
-        <div className="card" style={{ padding: "0 0 4px" }}>
-          <div
-            className="tabs"
-            role="tablist"
-            aria-label="Filter orders by status"
-            style={{ padding: "0 16px" }}
-          >
+        <div className="stack" style={{ gap: 14 }}>
+          <div className="tabs" role="tablist" aria-label="Filter orders by status">
             {statusTabs.map((tab) => {
               const count =
                 tab.value === "all" ? orders.length : orders.filter((order) => order.orderStatus === tab.value).length;
@@ -542,6 +542,9 @@ export default function OrdersPage() {
               );
             })}
           </div>
+
+          <div className="orders-split">
+          <div className="card" style={{ padding: "0 0 4px" }}>
 
           {query.isLoading ? (
             <div className="stack-sm" style={{ padding: 16 }} aria-busy="true">
@@ -570,7 +573,13 @@ export default function OrdersPage() {
                     const minutes = waitedMinutes(order);
                     const late = minutes >= 20 && (order.orderStatus === "open" || order.orderStatus === "in_kitchen");
                     return (
-                      <tr key={order.id} data-late={late || undefined}>
+                      <tr
+                        key={order.id}
+                        data-late={late || undefined}
+                        data-selected={selectedOrderId === order.id || undefined}
+                        onClick={() => setSelectedOrderId(order.id)}
+                        style={{ cursor: "pointer" }}
+                      >
                         <td className="cell-primary mono">{order.orderNumber ?? order.receiptNumber}</td>
                         <td>
                           <span className="row row-tight" style={{ gap: 6 }}>
@@ -612,6 +621,17 @@ export default function OrdersPage() {
               {search || orderType ? "No matching orders" : "No orders in this status right now"}
             </p>
           )}
+          </div>
+
+          <OrderDetail
+            order={selectedOrder}
+            tone={statusTone(selectedOrder?.orderStatus)}
+            currency={currency}
+            canManage={canManage}
+            onCheckout={setCheckoutTarget}
+            onClose={() => setSelectedOrderId(null)}
+          />
+          </div>
         </div>
       ) : (
         <div className={showAll ? "order-board order-board--wide" : "order-board"}>
@@ -724,7 +744,10 @@ export default function OrdersPage() {
             <Button
               variant="primary"
               loading={checkoutMutation.isPending}
-              disabled={!methodsQuery.data?.some((method) => method.code === paymentMethod && method.active)}
+              disabled={
+                !online ||
+                !methodsQuery.data?.some((method) => method.code === paymentMethod && method.active)
+              }
               onClick={() => checkoutMutation.mutate()}
             >
               Charge {checkoutTarget ? formatCurrency(checkoutTarget.total, currency) : ""}
@@ -733,9 +756,16 @@ export default function OrdersPage() {
         }
       >
         <div className="stack">
-          <p className="hint" style={{ margin: 0 }}>
-            Checking out deducts product stock and recipe ingredients, assigns the receipt number, and closes the tab.
-          </p>
+          {!online ? (
+            <div className="alert alert--warning" role="status">
+              No connection — checking out an open tab requires a server connection to confirm the
+              current order state. Reconnect to proceed.
+            </div>
+          ) : (
+            <p className="hint" style={{ margin: 0 }}>
+              Checking out deducts product stock and recipe ingredients, assigns the receipt number, and closes the tab.
+            </p>
+          )}
           <Field label="Payment method" htmlFor="order-payment-method">
             <Select
               id="order-payment-method"
@@ -818,5 +848,78 @@ export default function OrdersPage() {
         </div>
       </Dialog>
     </>
+  );
+}
+
+/**
+ * The detail rail from the design: the selected order's lines and total beside
+ * the table, with the two actions a cashier needs from here.
+ */
+function OrderDetail({
+  order,
+  tone,
+  currency,
+  canManage,
+  onCheckout,
+  onClose,
+}: {
+  order: Transaction | null;
+  tone: "neutral" | "success" | "warning" | "danger" | "info" | "brand";
+  currency: string;
+  canManage: boolean;
+  onCheckout: (order: Transaction) => void;
+  onClose: () => void;
+}) {
+  if (!order) return null;
+
+  const title = [order.orderNumber ?? order.receiptNumber, order.tableName].filter(Boolean).join(" · ");
+  const who = order.customerName || order.fulfilment?.contactName;
+
+  return (
+    <aside className="card order-detail" aria-label={`Order ${title}`}>
+      <div className="order-detail__head">
+        <b>{title}</b>
+        <div className="row row-tight">
+          <Badge tone={tone}>{orderStatusLabel(order.orderStatus)}</Badge>
+          <button type="button" className="icon-btn" onClick={onClose} aria-label="Close order details">
+            <X aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+      <p className="hint" style={{ margin: "2px 0 10px" }}>
+        Opened {formatTime(order.createdAt)}
+        {who ? ` · ${who}` : ""}
+      </p>
+
+      <ul className="ledger" style={{ margin: 0 }}>
+        {order.items.map((item, index) => (
+          <div className="ledger__row" key={`${item.name}-${index}`}>
+            <dt>
+              {item.quantity}× {item.name}
+            </dt>
+            <dd>{formatCurrency(item.lineTotal, currency)}</dd>
+          </div>
+        ))}
+        <div className="ledger__row ledger__row--total">
+          <dt>Total</dt>
+          <dd>{formatCurrency(order.total, currency)}</dd>
+        </div>
+      </ul>
+
+      {canManage ? (
+        <div className="row" style={{ gap: 8, marginTop: 12 }}>
+          <Link
+            href={`/sales?order=${encodeURIComponent(order.id)}`}
+            className="btn btn--secondary grow"
+            style={{ justifyContent: "center" }}
+          >
+            Add items
+          </Link>
+          <Button variant="primary" className="grow" onClick={() => onCheckout(order)}>
+            Checkout
+          </Button>
+        </div>
+      ) : null}
+    </aside>
   );
 }

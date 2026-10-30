@@ -1,21 +1,31 @@
 "use client";
 
-import * as React from "react";
+// Opt out of instant-navigation validation: this page renders data-dependent client UI.
+export const instant = false;
 
+import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Mail,
   MapPin,
   Phone,
   Search,
-  Store,
   Trash2,
   UserPlus,
   Users,
   X,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
-import { Badge, Button, EmptyState, Input, Spinner } from "@/components/ui/primitives";
+import { Card } from "@/components/ui/card";
+import {
+  Badge,
+  Button,
+  EmptyState,
+  Field,
+  Input,
+  Textarea,
+  initials,
+} from "@/components/ui/primitives";
 import { DataTable, Pagination, TablePagination, type Column } from "@/components/ui/table";
 import { ConfirmDialog, Sheet } from "@/components/ui/dialog";
 import { AccessDenied, InlineError } from "@/components/ui/states";
@@ -32,7 +42,6 @@ import {
 import { adjustLoyaltyPoints } from "@/lib/api/loyalty";
 import type { Customer, CustomerProfile, LoyaltyTransaction } from "@/lib/api/types";
 import { formatCurrency, formatDate, formatNumber } from "@/lib/formatting/currency";
-import { initials } from "@/components/ui/primitives";
 import { useAuth, usePermissions } from "@/lib/auth/auth-context";
 import { useDebouncedValue, useSearchParamState, replaceSearchParam } from "@/lib/use-debounced";
 
@@ -137,9 +146,9 @@ export default function CustomersPage() {
           <Badge tone={row.loyaltyPoints > 0 ? "brand" : "neutral"}>
             {formatNumber(row.loyaltyPoints)} points
           </Badge>
-          {row.totalSpent ? (
+          {row.visitsCount ? (
             <span className="hint" style={{ margin: 0 }}>
-              {formatNumber(row.visitsCount ?? 0)} {row.visitsCount === 1 ? "visit" : "visits"}
+              {formatNumber(row.visitsCount)} {row.visitsCount === 1 ? "visit" : "visits"}
             </span>
           ) : null}
         </div>
@@ -166,41 +175,37 @@ export default function CustomersPage() {
           ) : null
         }
       />
-      <div className="bg-white rounded-lg shadow">
-        <div className="p-4" style={{ borderBottom: "1px solid var(--border)" }}>
-          <div className="flex items-center gap-4">
-            <label className="flex-1">
-              <div className="input-affix" style={{ position: "relative", display: "flex", alignItems: "center" }}>
-                <Search aria-hidden="true" style={{ position: "absolute", left: 11, width: 15, height: 15, color: "var(--ink-3)", pointerEvents: "none" }} />
-                <Input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search name, phone, email, or loyalty number"
-                  aria-label="Search customers"
-                  style={{ paddingLeft: 34 }}
-                />
-                {search && (
-                  <button
-                    type="button"
-                    className="icon-btn"
-                    onClick={() => setSearch("")}
-                    aria-label="Clear search"
-                    style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)" }}
-                  >
-                    <X aria-hidden="true" />
-                  </button>
-                )}
-              </div>
-            </label>
-            <span className="text-gray-500 text-sm" style={{ margin: 0, whiteSpace: "nowrap" }}>
-              {query.data ? `${formatNumber(query.data.total)} customers` : "—"}
-            </span>
-            {activeFilters && (
-              <Button variant="quiet" size="sm" onClick={() => setSearch("")}>
-                Clear
-              </Button>
-            )}
-          </div>
+
+      <Card>
+        <div className="toolbar" style={{ borderBottom: "1px solid hsl(var(--border))" }}>
+          <label className="toolbar__search input-affix">
+            <Search aria-hidden="true" />
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search name, phone, email, or loyalty number"
+              aria-label="Search customers"
+            />
+            {search ? (
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={() => setSearch("")}
+                aria-label="Clear search"
+              >
+                <X aria-hidden="true" />
+              </button>
+            ) : null}
+          </label>
+          <div className="spacer" />
+          <span className="hint" style={{ margin: 0, whiteSpace: "nowrap" }}>
+            {query.data ? `${formatNumber(query.data.total)} customers` : "—"}
+          </span>
+          {activeFilters ? (
+            <Button variant="quiet" size="sm" onClick={() => setSearch("")}>
+              Clear
+            </Button>
+          ) : null}
         </div>
 
         {query.isError ? (
@@ -209,169 +214,82 @@ export default function CustomersPage() {
             error={query.error}
             onRetry={() => query.refetch()}
           />
-        ) : query.isLoading && !query.data ? (
-          <div className="p-8 text-center text-gray-500">
-            <Spinner size={16} />
-            <p style={{ margin: "8px 0 0" }}>Loading customers...</p>
-          </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Customer
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Contact
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Address
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Loyalty
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Added
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {rows.map((row) => (
-                  <tr
-                    key={row.id}
-                    className="hover:bg-gray-50 cursor-pointer"
-                    onClick={() => openCustomer(row)}
-                  >
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-3">
-                        <span className="avatar" aria-hidden="true">
-                          {initials(row.name)}
-                        </span>
-                        <div>
-                          <div style={{ fontWeight: 600 }}>{row.name}</div>
-                          <div className="text-gray-500 text-sm">{row.loyaltyNumber || "No loyalty number"}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-gray-500 text-sm">
-                        {row.phone && (
-                          <div className="flex items-center gap-2" style={{ marginBottom: 2 }}>
-                            <Phone aria-hidden="true" style={{ width: 12, height: 12 }} />
-                            {row.phone}
-                          </div>
-                        )}
-                        {row.email && (
-                          <div className="flex items-center gap-2">
-                            <Mail aria-hidden="true" style={{ width: 12, height: 12 }} />
-                            {row.email}
-                          </div>
-                        )}
-                        {!row.phone && !row.email && <span className="text-gray-400">No contact details</span>}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-gray-500 text-sm max-w-xs truncate">
-                      {row.address || "—"}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
-                      <div className="stack-sm" style={{ gap: 3, alignItems: "flex-end" }}>
-                        <Badge tone={row.loyaltyPoints > 0 ? "brand" : "neutral"} style={{ marginLeft: "auto" }}>
-                          {formatNumber(row.loyaltyPoints)} points
-                        </Badge>
-                        {row.visitsCount ? (
-                          <span className="hint" style={{ margin: 0 }}>
-                            {formatNumber(row.visitsCount)} {row.visitsCount === 1 ? "visit" : "visits"}
-                          </span>
-                        ) : null}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-gray-500 text-sm">
-                      {formatDate(row.createdAt)}
-                    </td>
-                  </tr>
-                ))}
-                {rows.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
-                      <div className="flex flex-col items-center">
-                        <Users className="w-10 h-10 text-gray-400 mb-2" />
-                        <p className="text-sm font-medium">
-                          {activeFilters ? "No customers match that search" : "No customers yet"}
-                        </p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          {activeFilters ? "Try a different search" : "Add a customer to get started"}
-                        </p>
-                        {canManage && !activeFilters && (
-                          <Button variant="primary" onClick={openNew} className="mt-3">
-                            Add first customer
-                          </Button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {rows.length > 0 && (
-          <div className="flex items-center justify-between px-6 py-3" style={{ borderTop: "1px solid var(--border)", background: "var(--canvas)" }}>
-            <span className="text-xs text-gray-500">
-              Showing up to {PAGE_SIZE} records per page
-            </span>              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-600">{query.data?.totalPages ? `Page ${page} of ${query.data.totalPages}` : `Page ${page}`}</span>
+          <DataTable
+            rows={rows}
+            columns={columns}
+            rowId={(row) => row.id}
+            loading={query.isLoading && !query.data}
+            onRowClick={openCustomer}
+            dense
+            minWidth={720}
+            empty={
+              <EmptyState
+                icon={<Users aria-hidden="true" />}
+                title={activeFilters ? "No customers match that search" : "No customers yet"}
+                description={
+                  activeFilters
+                    ? "Try a different search term or clear the filter."
+                    : "Add a customer to attach their details to checkout and track loyalty."
+                }
+                actions={
+                  activeFilters ? (
+                    <Button variant="secondary" onClick={() => setSearch("")}>
+                      Clear search
+                    </Button>
+                  ) : canManage ? (
+                    <Button variant="primary" onClick={openNew}>
+                      <UserPlus aria-hidden="true" /> Add first customer
+                    </Button>
+                  ) : null
+                }
+              />
+            }
+            mobile={(row) => (
               <button
-                onClick={() => setPage(1)}
-                disabled={page <= 1}
-                className="px-3 py-1 text-sm border border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+                type="button"
+                className="record"
+                onClick={() => openCustomer(row)}
+                style={{ width: "100%", textAlign: "left", background: "transparent", border: 0 }}
               >
-                First
+                <div className="record__top">
+                  <div className="row" style={{ minWidth: 0, gap: 10 }}>
+                    <span className="avatar" aria-hidden="true">
+                      {initials(row.name)}
+                    </span>
+                    <div style={{ minWidth: 0 }}>
+                      <div className="record__title">{row.name}</div>
+                      <div className="record__meta">
+                        {row.loyaltyNumber ? `${row.loyaltyNumber} · ` : ""}
+                        {row.phone || row.email || "No contact"}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    <Badge tone={row.loyaltyPoints > 0 ? "brand" : "neutral"}>
+                      {formatNumber(row.loyaltyPoints)} pts
+                    </Badge>
+                  </div>
+                </div>
               </button>
-              <button
-                onClick={() => setPage(Math.max(1, page - 1))}
-                disabled={page <= 1}
-                className="px-3 py-1 text-sm border border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
-              >
-                Prev
-              </button>
-              <span className="px-3 py-1 text-sm text-gray-700">
-                Page {page} of {query.data?.totalPages ?? 1}
-              </span>
-              <button
-                onClick={() => setPage(page + 1)}
-                disabled={query.data?.totalPages !== undefined ? query.data!.totalPages <= page : true}
-                className="px-3 py-1 text-sm border border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
-              >
-                Next
-              </button>
-              <button
-                onClick={() => setPage(query.data?.totalPages ?? page)}
-                disabled={query.data?.totalPages !== undefined ? query.data!.totalPages <= page : true}
-                className="px-3 py-1 text-sm border border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
-              >
-                Last
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="mt-6">
-        <div className="max-w-2xl mx-auto">
-          <EmptyState
-            icon={<Store className="w-8 h-8 text-gray-400" />}
-            title="No customers yet"
-            description="Add a customer to attach their details to future sales and track loyalty."
-            actions={
-              <Button variant="primary" onClick={openNew} className="w-full">
-                Add first customer
-              </Button>
+            )}
+            footer={
+              query.data && query.data.total > 0 ? (
+                <TablePagination>
+                  <Pagination
+                    page={page}
+                    totalPages={query.data.totalPages}
+                    total={query.data.total}
+                    pageSize={PAGE_SIZE}
+                    onPageChange={setPage}
+                    label="customers"
+                  />
+                </TablePagination>
+              ) : null
             }
           />
-        </div>
-      </div>
+        )}
+      </Card>
 
       <CustomerEditor
         open={editorOpen}
@@ -505,7 +423,7 @@ function CustomerEditor({
         title={canManage ? (customer ? "Edit customer" : "New customer") : customer?.name ?? "Customer"}
         description={
           customer
-            ? `${formatNumber(customer.loyaltyPoints)} loyalty points &middot; added ${formatDate(customer.createdAt)}`
+            ? `${formatNumber(customer.loyaltyPoints)} loyalty points · added ${formatDate(customer.createdAt)}`
             : "Create a contact record for checkout and loyalty."
         }
         width={500}
@@ -541,8 +459,8 @@ function CustomerEditor({
         }
       >
         {!canManage ? (
-          <div style={{ padding: 20 }}>
-            <div className="flex items-center gap-4" style={{ marginBottom: 16 }}>
+          <div className="stack" style={{ padding: 20 }}>
+            <div className="row" style={{ gap: 14 }}>
               <span
                 className="avatar"
                 style={{ width: 46, height: 46, fontSize: 16 }}
@@ -551,107 +469,91 @@ function CustomerEditor({
                 {customer ? initials(customer.name) : "?"}
               </span>
               <div>
-                <h2 style={{ fontSize: 18, margin: 0 }}>{customer?.name}</h2>
-                <p className="text-gray-500 text-sm" style={{ margin: 0 }}>
+                <h2 style={{ fontSize: 18, margin: 0, fontWeight: 600 }}>{customer?.name}</h2>
+                <p className="hint" style={{ margin: 0 }}>
                   {customer?.loyaltyNumber || "No loyalty number"}
                 </p>
               </div>
             </div>
-            <div className="space-y-2">
-              <div className="flex items-center gap-3">
-                <Phone className="w-4 h-4 text-gray-400" />
-                <span className="text-gray-700">{customer?.phone || "No phone number"}</span>
+            <div className="stack-sm">
+              <div className="row" style={{ gap: 8 }}>
+                <Phone className="hint" style={{ width: 14, height: 14 }} aria-hidden="true" />
+                <span>{customer?.phone || "No phone number"}</span>
               </div>
-              <div className="flex items-center gap-3">
-                <Mail className="w-4 h-4 text-gray-400" />
-                <span className="text-gray-700">{customer?.email || "No email address"}</span>
+              <div className="row" style={{ gap: 8 }}>
+                <Mail className="hint" style={{ width: 14, height: 14 }} aria-hidden="true" />
+                <span>{customer?.email || "No email address"}</span>
               </div>
-              <div className="flex items-start gap-3">
-                <MapPin className="w-4 h-4 text-gray-400 mt-0.5" />
-                <span className="text-gray-700">{customer?.address || "No address on file"}</span>
+              <div className="row" style={{ gap: 8, alignItems: "flex-start" }}>
+                <MapPin className="hint" style={{ width: 14, height: 14, marginTop: 2 }} aria-hidden="true" />
+                <span>{customer?.address || "No address on file"}</span>
               </div>
             </div>
             {customer ? <CustomerLoyaltyCard customer={customer} profile={profileQuery.data} /> : null}
-            <p className="text-gray-500 text-sm mt-4">
+            <p className="hint" style={{ marginTop: 8 }}>
               Your role can view customer records but not edit them.
             </p>
           </div>
         ) : (
           <form
             id="customer-editor"
-            className="space-y-4"
+            className="stack"
             style={{ padding: 20 }}
             onSubmit={(event) => {
               event.preventDefault();
               saveMutation.mutate();
             }}
           >
-            {errors.form && (
-              <div className="p-3 text-sm text-red-600 bg-red-50 rounded">
-                {errors.form}
-              </div>
-            )}
-            <div>
-              <label htmlFor="customer-name" className="block text-sm font-medium text-gray-700 mb-1">
-                Full name <span className="text-red-500">*</span>
-              </label>
+            {errors.form ? (
+              <div className="alert alert--danger">{errors.form}</div>
+            ) : null}
+            <Field label="Full name" htmlFor="customer-name" required error={errors.name}>
               <Input
                 id="customer-name"
                 value={form.name}
                 onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
                 placeholder="Customer name"
                 autoFocus
-                className={errors.name ? "border-red-500" : ""}
               />
-              {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="customer-phone" className="block text-sm font-medium text-gray-700 mb-1">
-                  Phone
-                </label>
-                <Input
-                  id="customer-phone"
-                  type="tel"
-                  value={form.phone}
-                  onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))}
-                  placeholder="+62 812 3456 7890"
-                  className={errors.phone ? "border-red-500" : ""}
-                />
-                {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone}</p>}
+            </Field>
+            <div className="row wrap" style={{ gap: 12 }}>
+              <div className="grow">
+                <Field label="Phone" htmlFor="customer-phone" error={errors.phone}>
+                  <Input
+                    id="customer-phone"
+                    type="tel"
+                    value={form.phone}
+                    onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))}
+                    placeholder="+62 812 3456 7890"
+                  />
+                </Field>
               </div>
-              <div>
-                <label htmlFor="customer-email" className="block text-sm font-medium text-gray-700 mb-1">
-                  Email
-                </label>
-                <Input
-                  id="customer-email"
-                  type="email"
-                  value={form.email}
-                  onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
-                  placeholder="name@example.com"
-                  className={errors.email ? "border-red-500" : ""}
-                />
-                {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email}</p>}
+              <div className="grow">
+                <Field label="Email" htmlFor="customer-email" error={errors.email}>
+                  <Input
+                    id="customer-email"
+                    type="email"
+                    value={form.email}
+                    onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
+                    placeholder="name@example.com"
+                  />
+                </Field>
               </div>
             </div>
-            <div>
-              <label htmlFor="customer-address" className="block text-sm font-medium text-gray-700 mb-1">
-                Address
-              </label>
-              <textarea
+            <Field label="Address" htmlFor="customer-address">
+              <Textarea
                 id="customer-address"
                 rows={2}
                 value={form.address}
-                onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => setForm((current) => ({ ...current, address: event.target.value }))}
+                onChange={(event) => setForm((current) => ({ ...current, address: event.target.value }))}
                 placeholder="Street, city, postal code"
-                className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
               />
-            </div>
-            <div>
-              <label htmlFor="customer-loyalty" className="block text-sm font-medium text-gray-700 mb-1">
-                Loyalty number
-              </label>
+            </Field>
+            <Field
+              label="Loyalty number"
+              htmlFor="customer-loyalty"
+              hint="Optional. Existing membership or loyalty identifier, if one is used."
+            >
               <Input
                 id="customer-loyalty"
                 value={form.loyaltyNumber}
@@ -660,8 +562,7 @@ function CustomerEditor({
                 disabled={Boolean(customer)}
                 className="mono"
               />
-              <p className="text-xs text-gray-500 mt-1">Optional. Existing membership or loyalty identifier, if one is used.</p>
-            </div>
+            </Field>
             {customer ? <CustomerLoyaltyCard customer={customer} profile={profileQuery.data} /> : null}
           </form>
         )}
@@ -733,49 +634,55 @@ function CustomerLoyaltyCard({ customer, profile }: { customer: Customer; profil
 
   return (
     <div
-      className="p-4"
-      style={{ background: "var(--surface-2)", borderRadius: 8, border: "1px solid var(--border)" }}
+      style={{
+        padding: 16,
+        background: "hsl(var(--surface-2))",
+        borderRadius: 8,
+        border: "1px solid hsl(var(--border))",
+      }}
     >
-      <div className="flex items-center justify-between">
-        <span className="text-gray-500 text-sm">Loyalty balance</span>
+      <div className="between">
+        <span className="hint">Loyalty balance</span>
         <Badge tone={customer.loyaltyPoints > 0 ? "brand" : "neutral"}>
           {formatNumber(customer.loyaltyPoints)} points
         </Badge>
       </div>
-      <div className="flex items-center justify-between" style={{ marginTop: 6 }}>
-        <span className="text-gray-500 text-sm">Lifetime spend</span>
+      <div className="between" style={{ marginTop: 6 }}>
+        <span className="hint">Lifetime spend</span>
         <b className="num">{formatCurrency(customer.totalSpent ?? 0, currency)}</b>
       </div>
-      <div className="flex items-center justify-between">
-        <span className="text-gray-500 text-sm">Visits</span>
+      <div className="between" style={{ marginTop: 4 }}>
+        <span className="hint">Visits</span>
         <b className="num">{formatNumber(customer.visitsCount ?? 0)}</b>
       </div>
-      <div className="flex items-center justify-between">
-        <span className="text-gray-500 text-sm">Promotions used</span>
+      <div className="between" style={{ marginTop: 4 }}>
+        <span className="hint">Promotions used</span>
         <b className="num">{formatNumber(profile?.promotionsUsed ?? 0)}</b>
       </div>
 
       {ledger.length ? (
-        <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed var(--border)" }}>
-          <div className="eyebrow" style={{ marginBottom: 4 }}>
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed hsl(var(--border))" }}>
+          <div className="eyebrow" style={{ marginBottom: 6 }}>
             Recent points
           </div>
-          {ledger.slice(0, 5).map((entry) => (
-            <div key={entry.id} className="flex items-center justify-between" style={{ fontSize: 12 }}>
-              <span className="text-gray-500">
-                {LEDGER_LABEL[entry.type] ?? entry.type} · {formatDate(entry.createdAt)}
-              </span>
-              <b className="num" style={{ color: entry.points < 0 ? "var(--danger, #b42318)" : undefined }}>
-                {entry.points > 0 ? "+" : ""}
-                {formatNumber(entry.points)}
-              </b>
-            </div>
-          ))}
+          <div className="stack-sm" style={{ gap: 4 }}>
+            {ledger.slice(0, 5).map((entry) => (
+              <div key={entry.id} className="between" style={{ fontSize: 12 }}>
+                <span className="hint">
+                  {LEDGER_LABEL[entry.type] ?? entry.type} · {formatDate(entry.createdAt)}
+                </span>
+                <b className="num" style={{ color: entry.points < 0 ? "hsl(var(--danger))" : undefined }}>
+                  {entry.points > 0 ? "+" : ""}
+                  {formatNumber(entry.points)}
+                </b>
+              </div>
+            ))}
+          </div>
         </div>
       ) : null}
 
       {canAdjust ? (
-        <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed var(--border)" }}>
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed hsl(var(--border))" }}>
           <div className="eyebrow" style={{ marginBottom: 6 }}>
             Adjust points
           </div>
@@ -810,7 +717,7 @@ function CustomerLoyaltyCard({ customer, profile }: { customer: Customer; profil
           </p>
         </div>
       ) : (
-        <p className="text-xs text-gray-500 mt-2">
+        <p className="hint" style={{ marginTop: 8, fontSize: 12 }}>
           Points are earned by the loyalty system; they are not edited here.
         </p>
       )}
