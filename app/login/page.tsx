@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Eye, EyeOff, LockKeyhole } from "lucide-react";
 import { AuthShell } from "@/components/auth/auth-shell";
+import { GoogleSignInButton } from "@/components/auth/google-button";
 import { Alert, Button, Field, Input } from "@/components/ui/primitives";
 import { USE_MOCK_API } from "@/lib/api/client";
 import { useAuth, usePermissions } from "@/lib/auth/auth-context";
@@ -59,7 +60,13 @@ export default function LoginPage() {
         <div className="auth__form-head">
           <span className="eyebrow">Welcome back</span>
           <h1>Sign in to Velora</h1>
-          <p>Use the account your workspace administrator created for you.</p>
+          <p>Use your Google account, or the account your workspace administrator created for you.</p>
+        </div>
+
+        <GoogleSignInButton />
+
+        <div className="auth__divider" role="separator">
+          or use email
         </div>
 
         {error ? (

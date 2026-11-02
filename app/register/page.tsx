@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Eye, EyeOff } from "lucide-react";
 import { AuthShell } from "@/components/auth/auth-shell";
+import { GoogleSignInButton } from "@/components/auth/google-button";
 import { Alert, Button, Field, Input } from "@/components/ui/primitives";
 import { register } from "@/lib/api/auth";
 import { useAuth, usePermissions } from "@/lib/auth/auth-context";
@@ -71,6 +72,12 @@ export default function RegisterPage() {
           <span className="eyebrow">Get started</span>
           <h1>Create your account</h1>
           <p>Next you will set up your business and first outlet.</p>
+        </div>
+
+        <GoogleSignInButton label="Sign up with Google" />
+
+        <div className="auth__divider" role="separator">
+          or use email
         </div>
 
         {error ? (

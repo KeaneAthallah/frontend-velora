@@ -2,7 +2,12 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { login as apiLogin, logout as apiLogout, me as apiMe } from "@/lib/api/auth";
+import {
+  completeGoogleSignIn,
+  login as apiLogin,
+  logout as apiLogout,
+  me as apiMe,
+} from "@/lib/api/auth";
 import { getAccessToken, setAccessToken } from "@/lib/api/client";
 import type { Session } from "@/lib/api/types";
 
@@ -10,6 +15,7 @@ interface AuthContextValue {
   session: Session | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
+  signInWithGoogle: (code: string) => Promise<void>;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -56,6 +62,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [queryClient]
   );
 
+  const signInWithGoogle = useCallback(
+    async (code: string) => {
+      queryClient.clear();
+      setAccessToken(null);
+      const next = await completeGoogleSignIn(code);
+      setSession(next);
+    },
+    [queryClient]
+  );
+
   const signOut = useCallback(async () => {
     await apiLogout().catch(() => {});
     queryClient.clear();
@@ -68,8 +84,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ session, loading, signIn, signOut, refresh }),
-    [session, loading, signIn, signOut, refresh]
+    () => ({ session, loading, signIn, signInWithGoogle, signOut, refresh }),
+    [session, loading, signIn, signInWithGoogle, signOut, refresh]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

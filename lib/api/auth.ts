@@ -111,6 +111,35 @@ export async function register(
   return mapSessionFromMe(res.user);
 }
 
+/**
+ * The Google authorize URL to send the browser to. The API encrypts the
+ * optional same-origin return path into the OAuth state.
+ */
+export async function googleAuthUrl(next?: string | null): Promise<string> {
+  if (USE_MOCK_API) {
+    throw new Error("Google sign-in is not available in the local demo data mode.");
+  }
+  const query = next ? `?next=${encodeURIComponent(next)}` : "";
+  const res = await apiRequest<{ url: string }>(`/auth/google/redirect${query}`);
+  return res.url;
+}
+
+/** Trade the one-time code from the OAuth callback for a session. */
+export async function completeGoogleSignIn(code: string): Promise<Session> {
+  if (USE_MOCK_API) {
+    throw new Error("Google sign-in is not available in the local demo data mode.");
+  }
+  const res = await apiRequest<{ user: BackendUser; token: string }>("/auth/google/exchange", {
+    method: "POST",
+    body: { code },
+  });
+  if (res.token) {
+    const { setAccessToken } = await import("./client");
+    setAccessToken(res.token);
+  }
+  return me();
+}
+
 export async function logout(): Promise<void> {
   if (!USE_MOCK_API) {
     await apiRequest<void>("/auth/logout", { method: "POST" }).catch(() => {});
