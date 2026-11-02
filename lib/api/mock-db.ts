@@ -59,6 +59,10 @@ import type {
   Role,
   SalesChannel,
   Supplier,
+  SubscriptionInvoice as TypeSubscriptionInvoice,
+  SubscriptionPayment as TypeSubscriptionPayment,
+  SubscriptionHistoryEntry as TypeSubscriptionHistoryEntry,
+  AdminBusinessRow,
   TaxRate,
   Transaction,
 } from "./types";
@@ -121,6 +125,11 @@ export const mockDb: {
   channelMappings: ChannelMapping[];
   channelMappingOwners: Record<string, string>;
   channelEvents: ChannelEvent[];
+  subscriptionInvoices: TypeSubscriptionInvoice[];
+  subscriptionPayments: TypeSubscriptionPayment[];
+  subscriptionHistory: TypeSubscriptionHistoryEntry[];
+  adminBusinesses: AdminBusinessRow[];
+  allPlans: Array<{ id: string; slug: string; name: string }>;
 } = {
   business: { ...mockBusiness },
   outlets: mockOutlets.map((outlet) => ({ ...outlet })),
@@ -191,6 +200,23 @@ export const mockDb: {
     ])
   ),
   channelEvents: [],
+  subscriptionInvoices: [],
+  subscriptionPayments: [],
+  subscriptionHistory: [
+    {
+      id: "1",
+      action: "trial_started",
+      fromStatus: null,
+      toStatus: "trialing",
+      fromPlan: null,
+      toPlan: { slug: "trial", name: "Free Trial" },
+      metadata: { trial_days: 30 },
+      actor: null,
+      createdAt: new Date(Date.now() - 7 * 86400000).toISOString(),
+    },
+  ],
+  adminBusinesses: [],
+  allPlans: [{ id: "1", slug: "trial", name: "Free Trial" }, { id: "2", slug: "basic", name: "Basic" }, { id: "3", slug: "pro", name: "Pro" }],
 };
 
 // Development-only fixture used by the mock data toggle. `data=worst` swaps

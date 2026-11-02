@@ -6,6 +6,8 @@ import { Loader2 } from "lucide-react";
 import { useAuth, usePermissions } from "@/lib/auth/auth-context";
 import { useBusiness } from "@/lib/business/context";
 import { defaultRoute } from "@/lib/navigation";
+import { useSubscription } from "@/lib/subscription/context";
+import { SubscriptionNotice, TrialBanner } from "@/components/subscription/trial-banner";
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
 import { BottomNav } from "./bottom-nav";
@@ -22,6 +24,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [searchInstant, setSearchInstant] = React.useState(false);
   const [collapsed, setCollapsed] = React.useState(false);
   const mobileNavOpenRef = React.useRef(false);
+  const sub = useSubscription();
 
   React.useEffect(() => {
     mobileNavOpenRef.current = mobileNavOpen;
@@ -185,6 +188,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               setSearchOpen(true);
             }}
           />
+          {/* Trial and subscription notices — always visible but dismissible */}
+          {!session?.subscription?.isActive && sub.data ? (
+            <SubscriptionNotice status={sub.subscription.status} />
+          ) : sub.trialDaysRemaining > 0 && !sub.plan?.isTrial && session?.subscription?.trialReminders ? (
+            <TrialBanner
+              daysRemaining={sub.subscription.trialDaysRemaining}
+              trialEndsAt={sub.subscription.trialEndsAt}
+              trialReminders={session.subscription.trialReminders}
+            />
+          ) : null}
           <main id="main" className={pathname === "/sales" ? "page page--wide" : "page"} tabIndex={-1}>
             {children}
           </main>

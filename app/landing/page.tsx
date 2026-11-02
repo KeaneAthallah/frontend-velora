@@ -65,6 +65,7 @@ export default function LandingPage() {
             </Link>
             <span className="lp-nav__spacer" />
             <a href="#features">Features</a>
+            <Link href="/pricing">Pricing</Link>
             <a href="#start">How it works</a>
             <Link href="/login" className="lp-nav__signin">
               Sign in

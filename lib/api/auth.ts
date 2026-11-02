@@ -70,7 +70,7 @@ function mapSessionFromMe(user: BackendUser): Session {
     else localStorage.removeItem("outletId");
   }
 
-  return { user: mappedUser, business, outlet, permissions };
+  return { user: mappedUser, business, outlet, permissions, isPlatformAdmin: !!user.is_platform_admin };
 }
 
 export async function login(email: string, password: string): Promise<Session> {
