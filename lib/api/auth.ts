@@ -1,5 +1,6 @@
 import { apiRequest, USE_MOCK_API } from "./client";
 import { mockSession } from "./mock-data";
+import { mapSubscriptionSummary } from "./subscriptions";
 import type { Session, User } from "./types";
 
 type BackendPermission = { slug?: string; name?: string } | string;
@@ -23,6 +24,7 @@ type BackendUser = {
     outlet_id: number | string;
     outlet?: { id: number | string; name: string; business_id?: number | string };
   }[];
+  subscription?: Record<string, unknown> | null;
 };
 
 function mapUser(user: BackendUser): User {
@@ -70,7 +72,14 @@ function mapSessionFromMe(user: BackendUser): Session {
     else localStorage.removeItem("outletId");
   }
 
-  return { user: mappedUser, business, outlet, permissions, isPlatformAdmin: !!user.is_platform_admin };
+  return {
+    user: mappedUser,
+    business,
+    outlet,
+    permissions,
+    isPlatformAdmin: !!user.is_platform_admin,
+    subscription: user.subscription ? mapSubscriptionSummary(user.subscription) : undefined,
+  };
 }
 
 export async function login(email: string, password: string): Promise<Session> {

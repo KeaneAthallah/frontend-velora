@@ -1,14 +1,98 @@
 import { apiRequest, USE_MOCK_API } from "./client";
 import { mockDb, mockId } from "./mock-db";
-import type { AdminOverview, AdminBusinessRow, AdminBusinessDetail, PlanApi, SubscriptionPayment, SubscriptionDetail } from "./types";
-import { getSubscription as _getMockSubscription } from "./subscriptions";
+import type { AdminOverview, AdminBusinessRow, AdminBusinessDetail, PlanApi, SubscriptionPayment, SubscriptionDetail, SubscriptionHistoryEntry } from "./types";
+import { getSubscription as _getMockSubscription, mapInvoice, mapPayment, mapPlan, mapSubscriptionDetail } from "./subscriptions";
 
 /* ──────────────────────── admin (platform_admin only) ───────────── */
 
+type Raw = Record<string, any>;
+
+function num(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function mapAdminOverview(raw: Raw): AdminOverview {
+  return {
+    businesses: num(raw.businesses),
+    counts: raw.counts ?? {},
+    mrr: num(raw.mrr),
+    currency: raw.currency ?? "IDR",
+    revenueThisMonth: num(raw.revenue_this_month),
+    revenueAllTime: num(raw.revenue_all_time),
+    planDistribution: (raw.plan_distribution ?? []).map((plan: Raw) => ({
+      slug: plan.slug,
+      name: plan.name,
+      active: num(plan.active),
+      monthlyPrice: num(plan.monthly_price),
+      yearlyPrice: num(plan.yearly_price),
+    })),
+    recentPayments: (raw.recent_payments ?? []).map((payment: Raw) => ({
+      id: String(payment.id ?? ""),
+      business: payment.business ?? null,
+      invoice: payment.invoice ?? null,
+      provider: payment.provider,
+      status: payment.status,
+      amount: num(payment.amount),
+      currency: payment.currency ?? "IDR",
+      createdAt: payment.created_at ?? "",
+      paidAt: payment.paid_at ?? null,
+    })),
+    trialDays: num(raw.trial_days),
+    graceDays: num(raw.grace_days),
+  };
+}
+
+function mapAdminBusinessRow(raw: Raw): AdminBusinessRow {
+  const s = raw.subscription;
+  const usage = raw.usage ?? {};
+  return {
+    id: String(raw.id ?? ""),
+    name: raw.name,
+    slug: raw.slug,
+    businessStatus: raw.business_status ?? "active",
+    createdAt: raw.created_at ?? "",
+    subscription: s
+      ? {
+          id: String(s.id ?? ""),
+          status: s.status,
+          billingPeriod: s.billing_period ?? "monthly",
+          plan: s.plan ?? null,
+          planName: s.plan_name ?? null,
+          trialEndsAt: s.trial_ends_at ?? null,
+          endsAt: s.ends_at ?? null,
+          daysRemaining: num(s.days_remaining),
+          cancelAtPeriodEnd: Boolean(s.cancel_at_period_end),
+          pendingPlan: s.pending_plan ?? null,
+        }
+      : null,
+    usage: {
+      products: num(usage.products),
+      customers: num(usage.customers),
+      outlets: num(usage.outlets),
+      users: num(usage.users),
+      transactionsPerMonth: num(usage.transactions_per_month),
+    },
+  };
+}
+
+function mapHistory(raw: Raw): SubscriptionHistoryEntry {
+  return {
+    id: String(raw.id ?? ""),
+    action: raw.action,
+    fromStatus: raw.from_status ?? null,
+    toStatus: raw.to_status ?? null,
+    fromPlan: raw.from_plan ?? null,
+    toPlan: raw.to_plan ?? null,
+    metadata: raw.metadata ?? {},
+    actor: raw.actor ?? null,
+    createdAt: raw.created_at ?? "",
+  };
+}
+
 export async function getAdminOverview(): Promise<AdminOverview> {
   if (USE_MOCK_API) return mockOverview();
-  const data = await apiRequest<AdminOverview>("/admin/subscriptions/overview");
-  return data;
+  return mapAdminOverview(await apiRequest<Raw>("/admin/subscriptions/overview"));
 }
 
 export async function listAdminBusinesses(params?: { status?: string; plan?: string; q?: string }): Promise<{ data: AdminBusinessRow[]; page: number; totalPages: number; total: number }> {
@@ -29,13 +113,26 @@ export async function listAdminBusinesses(params?: { status?: string; plan?: str
   if (params?.q) query.set("q", params.q);
   const data = await apiRequest<any>(`/admin/subscriptions?${query}`);
   const items = Array.isArray(data?.data) ? data.data : [];
-  return { data: items as AdminBusinessRow[], page: data?.meta?.current_page ?? 1, totalPages: data?.meta?.last_page ?? 1, total: data?.meta?.total ?? items.length };
+  return { data: items.map(mapAdminBusinessRow), page: num(data?.meta?.current_page) || 1, totalPages: num(data?.meta?.last_page) || 1, total: num(data?.meta?.total) || items.length };
 }
 
 export async function getAdminBusiness(businessId: string): Promise<AdminBusinessDetail> {
   if (USE_MOCK_API) return mockBusinessDetail(businessId);
-  const data = await apiRequest<AdminBusinessDetail>(`/admin/subscriptions/${businessId}`);
-  return data;
+  const raw = await apiRequest<Raw>(`/admin/subscriptions/${businessId}`);
+  return {
+    business: {
+      id: String(raw.business?.id ?? ""),
+      name: raw.business?.name ?? "",
+      slug: raw.business?.slug ?? "",
+      status: raw.business?.status ?? "active",
+      currency: raw.business?.currency ?? "IDR",
+      createdAt: raw.business?.created_at ?? "",
+    },
+    snapshot: mapSubscriptionDetail(raw.snapshot ?? {}),
+    invoices: (raw.invoices ?? []).map(mapInvoice),
+    payments: (raw.payments ?? []).map(mapPayment),
+    history: (raw.history ?? []).map(mapHistory),
+  };
 }
 
 export async function adminChangePlan(businessId: string, input: { plan: string; billingPeriod: "monthly" | "yearly"; reason?: string }): Promise<{ subscription: any }> {
@@ -68,8 +165,8 @@ export async function adminConfirmPayment(paymentId: string, note?: string): Pro
     if (pay) pay.status = "paid";
     return { status: "paid", payment: pay! };
   }
-  const data = await apiRequest<{ status: string; payment: SubscriptionPayment }>(`/admin/subscriptions/payments/${paymentId}/confirm`, { method: "POST", body: { note } });
-  return data;
+  const raw = await apiRequest<Raw>(`/admin/subscriptions/payments/${paymentId}/confirm`, { method: "POST", body: { note } });
+  return { status: raw.status, payment: mapPayment(raw.payment ?? {}) };
 }
 
 export async function listAdminPayments(params?: { status?: string; provider?: string; business_id?: string }): Promise<{ data: SubscriptionPayment[]; page: number; totalPages: number; total: number }> {
@@ -85,19 +182,22 @@ export async function listAdminPayments(params?: { status?: string; provider?: s
   if (params?.business_id) query.set("business_id", params.business_id);
   const data = await apiRequest<any>(`/admin/subscriptions/payments?${query}`);
   const items = Array.isArray(data?.data) ? data.data : [];
-  return { data: items as SubscriptionPayment[], page: data?.meta?.current_page ?? 1, totalPages: data?.meta?.last_page ?? 1, total: data?.meta?.total ?? items.length };
+  return { data: items.map(mapPayment), page: num(data?.meta?.current_page) || 1, totalPages: num(data?.meta?.last_page) || 1, total: num(data?.meta?.total) || items.length };
 }
 
 export async function listAdminPlans(): Promise<{ plans: PlanApi[]; featureCatalog: { key: string; label: string; group: string }[]; usageMetrics: { key: string; label: string }[] }> {
   if (USE_MOCK_API) return mockAdminPlans();
-  const data = await apiRequest<{ plans: PlanApi[]; featureCatalog: { key: string; label: string; group: string }[]; usageMetrics: { key: string; label: string }[] }>("/admin/subscriptions/plans");
-  return data;
+  const raw = await apiRequest<Raw>("/admin/subscriptions/plans");
+  return {
+    plans: (raw.plans ?? []).map(mapPlan),
+    featureCatalog: raw.feature_catalog ?? [],
+    usageMetrics: raw.usage_metrics ?? [],
+  };
 }
 
 export async function updateAdminPlan(planId: string, updates: Record<string, any>): Promise<PlanApi> {
   if (USE_MOCK_API) return mockAdminPlans().plans.find((p) => p.id === planId)!;
-  const data = await apiRequest<PlanApi>(`/admin/subscriptions/plans/${planId}`, { method: "PUT", body: updates });
-  return data;
+  return mapPlan(await apiRequest<Raw>(`/admin/subscriptions/plans/${planId}`, { method: "PUT", body: updates }));
 }
 
 /* ──────────────────────── mock helpers ─────────────────────────── */

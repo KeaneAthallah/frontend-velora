@@ -39,7 +39,7 @@ export default function PricingPage() {
     try {
       const result = await createCheckout({ plan: slug, billingPeriod: period });
       if (result.checkout.redirectUrl) {
-        window.location.href = result.checkout.redirectUrl;
+        window.location.assign(result.checkout.redirectUrl);
       } else {
         router.push(`/settings/subscription?checkout=${result.payment.id}`);
       }

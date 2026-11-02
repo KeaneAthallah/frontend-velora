@@ -12,6 +12,7 @@ import {
   Receipt,
   Settings,
   ShoppingCart,
+  Wallet,
   Tag,
   Truck,
   Users,
@@ -82,6 +83,13 @@ export const navGroups: NavGroup[] = [
         description: "Marketplace and online orders",
       },
       {
+        label: "Cash registers",
+        href: "/shifts",
+        icon: Wallet,
+        permission: "shifts.view",
+        description: "Open tills and reconcile drawers",
+      },
+      {
         label: "Transactions",
         href: "/transactions",
         icon: Receipt,
@@ -106,6 +114,13 @@ export const navGroups: NavGroup[] = [
         icon: UtensilsCrossed,
         permission: "menu.view",
         description: "Modifiers, combos, and availability",
+      },
+      {
+        label: "Stock transfers",
+        href: "/stock-transfers",
+        icon: Truck,
+        permission: "inventory.adjust",
+        description: "Draft → complete transfers between outlets",
       },
       {
         label: "Inventory",

@@ -49,6 +49,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["subscription"],
     queryFn: getSubscription,
+    enabled: Boolean(session?.business?.id),
     staleTime: 60_000,
   });
 

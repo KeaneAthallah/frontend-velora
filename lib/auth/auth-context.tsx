@@ -8,7 +8,7 @@ import {
   logout as apiLogout,
   me as apiMe,
 } from "@/lib/api/auth";
-import { getAccessToken, setAccessToken } from "@/lib/api/client";
+import { getAccessToken, setAccessToken, UNAUTHORIZED_EVENT } from "@/lib/api/client";
 import type { Session } from "@/lib/api/types";
 
 interface AuthContextValue {
@@ -51,6 +51,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
     };
   }, []);
+
+  // A revoked or expired bearer token clears the session; AppShell then sends
+  // the member back to /login with a return path.
+  useEffect(() => {
+    const onUnauthorized = () => {
+      queryClient.clear();
+      setSession(null);
+    };
+    window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+  }, [queryClient]);
 
   const signIn = useCallback(
     async (email: string, password: string) => {

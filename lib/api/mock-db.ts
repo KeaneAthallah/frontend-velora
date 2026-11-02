@@ -33,6 +33,8 @@ import {
 } from "./mock-data";
 import type {
   Business,
+  CashMovement,
+  CashRegister,
   Category,
   ChannelEvent,
   ChannelMapping,
@@ -56,6 +58,7 @@ import type {
   Promotion,
   PurchaseOrder,
   Refund,
+  RegisterShift,
   Role,
   SalesChannel,
   Supplier,
@@ -63,6 +66,7 @@ import type {
   SubscriptionPayment as TypeSubscriptionPayment,
   SubscriptionHistoryEntry as TypeSubscriptionHistoryEntry,
   AdminBusinessRow,
+  StockTransfer,
   TaxRate,
   Transaction,
 } from "./types";
@@ -128,6 +132,10 @@ export const mockDb: {
   subscriptionInvoices: TypeSubscriptionInvoice[];
   subscriptionPayments: TypeSubscriptionPayment[];
   subscriptionHistory: TypeSubscriptionHistoryEntry[];
+  cashRegisters: CashRegister[];
+  registerShifts: RegisterShift[];
+  cashMovements: CashMovement[];
+  stockTransfers: StockTransfer[];
   adminBusinesses: AdminBusinessRow[];
   allPlans: Array<{ id: string; slug: string; name: string }>;
 } = {
@@ -215,6 +223,13 @@ export const mockDb: {
       createdAt: new Date(Date.now() - 7 * 86400000).toISOString(),
     },
   ],
+  cashRegisters: [
+    { id: "reg-1", outletId: mockOutlets[0]?.id ?? "1", name: "Front counter", code: "FRONT", status: "active" },
+    { id: "reg-2", outletId: mockOutlets[0]?.id ?? "1", name: "Bar till", code: "BAR", status: "active" },
+  ],
+  registerShifts: [],
+  cashMovements: [],
+  stockTransfers: [],
   adminBusinesses: [],
   allPlans: [{ id: "1", slug: "trial", name: "Free Trial" }, { id: "2", slug: "basic", name: "Basic" }, { id: "3", slug: "pro", name: "Pro" }],
 };

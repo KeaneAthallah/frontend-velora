@@ -436,7 +436,7 @@ export type InventoryMovement = {
   productId: string;
   productName: string;
   outletId: string;
-  type: "adjustment" | "transfer" | "receive" | "sale" | "return" | "void" | "damaged" | "missing" | "expired" | "write_off";
+  type: "adjustment" | "transfer" | "transfer_out" | "transfer_in" | "receive" | "sale" | "return" | "void" | "damaged" | "missing" | "expired" | "write_off";
   quantity: number;
   reason: string;
   balanceAfter?: number;
@@ -979,4 +979,56 @@ export type AdminBusinessDetail = {
   invoices: SubscriptionInvoice[];
   payments: SubscriptionPayment[];
   history: SubscriptionHistoryEntry[];
+};
+
+// ───────────────────────────────────────────────────────────────────
+// Cash registers & shifts
+// ───────────────────────────────────────────────────────────────────
+
+export type CashRegister = {
+  id: string;
+  outletId: string;
+  name: string;
+  code: string;
+  status: "active" | "inactive";
+};
+
+export type RegisterShift = {
+  id: string;
+  outletId: string;
+  registerId: string;
+  registerName?: string;
+  cashierId: string;
+  cashierName?: string;
+  status: "open" | "closed";
+  openingCash: number;
+  expectedCash: number | null;
+  actualCash: number | null;
+  difference: number | null;
+  openedAt: string;
+  closedAt: string | null;
+  notes: string | null;
+};
+
+export type CashMovementType = "in" | "out";
+
+export type CashMovement = {
+  id: string;
+  shiftId: string;
+  type: CashMovementType;
+  amount: number;
+  reason: string | null;
+  createdAt: string;
+};
+
+export type StockTransfer = {
+  id: string;
+  business_id: string;
+  from_outlet_id: string;
+  to_outlet_id: string;
+  status: "draft" | "approved" | "in_transit" | "completed";
+  notes?: string;
+  completed_at?: string;
+  created_at: string;
+  items: { product_id: string; product_variant_id?: string; quantity: number }[];
 };

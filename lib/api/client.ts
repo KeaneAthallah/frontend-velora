@@ -115,6 +115,29 @@ function writeOfflineCache(path: string, data: string) {
   }
 }
 
+/** Fired when the server rejects the stored token, so the UI can sign out. */
+export const UNAUTHORIZED_EVENT = "velora:unauthorized";
+
+/** Endpoints where a 401 means "bad credentials", not "expired session". */
+const CREDENTIAL_PATHS = [
+  "/auth/login",
+  "/auth/register",
+  "/auth/forgot-password",
+  "/auth/reset-password",
+  "/auth/google",
+];
+
+function handleUnauthorized(path: string) {
+  if (typeof window === "undefined") return;
+  const clean = path.split("?")[0];
+  if (CREDENTIAL_PATHS.some((prefix) => clean.startsWith(prefix))) return;
+
+  // Drop the token and the cached session so a reload cannot restore it.
+  sessionStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(`velora_offline_cache_${shortHash("/me")}`);
+  window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+}
+
 export function getAccessToken(): string | null {
   if (typeof window === "undefined") return null;
   return sessionStorage.getItem(TOKEN_KEY);
@@ -196,6 +219,7 @@ export async function apiRequest<T>(path: string, opts: RequestOptions = {}): Pr
   }
 
   if (!res.ok) {
+    if (res.status === 401) handleUnauthorized(path);
     throw new ApiException(toApiError(res, parsed));
   }
 

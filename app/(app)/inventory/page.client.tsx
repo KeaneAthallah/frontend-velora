@@ -607,6 +607,8 @@ function movementLabel(type: InventoryMovement["type"]) {
   const labels: Record<InventoryMovement["type"], string> = {
     adjustment: "Adjustment",
     transfer: "Transfer",
+    transfer_out: "Transfer Out",
+    transfer_in: "Transfer In",
     receive: "Received",
     sale: "Sale",
     return: "Return",
@@ -624,6 +626,8 @@ function lastMovementLabel(movement: InventoryMovement) {
   const verbs: Record<InventoryMovement["type"], string> = {
     adjustment: "Adjusted",
     transfer: "Transferred",
+    transfer_out: "Transferred Out",
+    transfer_in: "Transferred In",
     receive: "Delivered",
     sale: "Used",
     return: "Returned",
