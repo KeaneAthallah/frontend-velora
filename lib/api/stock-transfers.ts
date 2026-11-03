@@ -1,190 +1,142 @@
 import { apiRequest, USE_MOCK_API } from "./client";
-import { mockDb } from "./mock-db";
-import type { InventoryMovement, Product } from "./types";
+import { adjustMockStock, mockDb, mockId, mockProduct } from "./mock-db";
+import type { StockTransfer, StockTransferItem, StockTransferStatus } from "./types";
 
-type StockTransferItem = {
-  product_id: string;
-  product_variant_id?: string;
-  quantity: number;
-};
+type Raw = Record<string, any>;
 
-type StockTransferFormValues = {
-  from_outlet_id: string;
-  to_outlet_id: string;
+export type StockTransferInput = {
+  fromOutletId: string;
+  toOutletId: string;
   notes?: string;
-  items: StockTransferItem[];
+  items: { productId: string; quantity: number }[];
 };
 
-type StockTransfer = {
-  id: string;
-  business_id: string;
-  from_outlet_id: string;
-  to_outlet_id: string;
-  status: "draft" | "approved" | "in_transit" | "completed";
-  notes?: string;
-  created_at: string;
-  items: StockTransferItem[];
-};
+const STATUSES: StockTransferStatus[] = ["draft", "approved", "in_transit", "completed", "cancelled"];
 
-type StockTransferCreateResponse = {
-  transfer: StockTransfer;
-};
-
-type StockTransferCompleteResponse = {
-  transfer: StockTransfer;
-};
-
-type StockTransferListResponse = {
-  success: boolean;
-  message: string;
-  data: {
-    transfers: StockTransfer[];
-    current_page: number;
-    total: number;
+function mapItem(raw: Raw, productName?: string): StockTransferItem {
+  return {
+    id: String(raw.id ?? ""),
+    productId: String(raw.product_id ?? ""),
+    productName: raw.product?.name ?? productName,
+    quantity: Number(raw.quantity ?? 0),
   };
-};
-
-export async function listStockTransfers(businessId: string): Promise<StockTransfer[]> {
-  if (USE_MOCK_API) {
-    return mockDb.stockTransfers ?? [];
-  }
-  const res = await apiRequest<{ transfers: StockTransfer[] }>(`/stock-transfers?business_id=${businessId}`);
-  return res.transfers;
 }
 
-export async function createStockTransfer(
-  businessId: string,
-  form: StockTransferFormValues
-): Promise<StockTransfer> {
+function mapTransfer(raw: Raw): StockTransfer {
+  return {
+    id: String(raw.id ?? ""),
+    fromOutletId: String(raw.from_outlet_id ?? ""),
+    toOutletId: String(raw.to_outlet_id ?? ""),
+    status: STATUSES.includes(raw.status) ? raw.status : "draft",
+    notes: raw.notes ?? null,
+    createdAt: raw.created_at ?? "",
+    completedAt: raw.completed_at ?? null,
+    items: Array.isArray(raw.items) ? raw.items.map((item: Raw) => mapItem(item)) : [],
+  };
+}
+
+export async function listStockTransfers(): Promise<StockTransfer[]> {
+  if (USE_MOCK_API) {
+    return [...mockDb.stockTransfers]
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+      .map((transfer) => ({ ...transfer, items: transfer.items.map((item) => ({ ...item })) }));
+  }
+  const data = await apiRequest<any>("/stock-transfers");
+  const items = Array.isArray(data) ? data : (data?.data ?? []);
+  return items.map(mapTransfer);
+}
+
+export async function createStockTransfer(input: StockTransferInput): Promise<StockTransfer> {
+  if (!input.items.length) throw new Error("Add at least one product");
+  if (input.fromOutletId === input.toOutletId) throw new Error("Choose two different outlets");
+
   if (USE_MOCK_API) {
     const transfer: StockTransfer = {
       id: mockId("st"),
-      business_id: businessId,
-      from_outlet_id: form.from_outlet_id,
-      to_outlet_id: form.to_outlet_id,
+      fromOutletId: input.fromOutletId,
+      toOutletId: input.toOutletId,
       status: "draft",
-      notes: form.notes,
-      created_at: new Date().toISOString(),
-      items: form.items.map((item) => ({ ...item })),
+      notes: input.notes ?? null,
+      createdAt: new Date().toISOString(),
+      completedAt: null,
+      items: input.items.map((item) => ({
+        id: mockId("sti"),
+        productId: item.productId,
+        productName: mockProduct(item.productId)?.name,
+        quantity: item.quantity,
+      })),
     };
-    mockDb.stockTransfers = mockDb.stockTransfers ?? [];
-    mockDb.stockTransfers.push(transfer);
-    return transfer;
+    mockDb.stockTransfers = [transfer, ...mockDb.stockTransfers];
+    return { ...transfer, items: transfer.items.map((item) => ({ ...item })) };
   }
-  const res = await apiRequest<StockTransferCreateResponse>(
-    `/stock-transfers`,
-    {
-      method: "POST",
-      body: {
-        ...form,
-        from_outlet_id: form.from_outlet_id,
-        to_outlet_id: form.to_outlet_id,
-        notes: form.notes,
-        items: form.items,
-      },
-    }
-  );
-  return res.transfer;
+
+  const data = await apiRequest<Raw>("/stock-transfers", {
+    method: "POST",
+    body: {
+      from_outlet_id: Number(input.fromOutletId),
+      to_outlet_id: Number(input.toOutletId),
+      notes: input.notes,
+      items: input.items.map((item) => ({
+        product_id: Number(item.productId),
+        quantity: item.quantity,
+      })),
+    },
+  });
+  return mapTransfer(data);
 }
 
-export async function completeStockTransfer(
-  businessId: string,
-  transferId: string
-): Promise<StockTransfer> {
+export async function completeStockTransfer(id: string): Promise<StockTransfer> {
   if (USE_MOCK_API) {
-    const transfer = mockDb.stockTransfers?.find((t) => t.id === transferId);
+    const transfer = mockDb.stockTransfers.find((item) => item.id === id);
     if (!transfer) throw new Error("Transfer not found");
-    if (transfer.status !== "draft") throw new Error("Transfer not in draft state");
+    if (transfer.status !== "draft") throw new Error("Only draft transfers can be completed");
 
-    // Mock: move stock between outlets
-    for (const item of transfer.items) {
-      const product = mockDb.products.find((p) => p.id === item.product_id);
-      if (!product) continue;
-
-      // Decrement from from_outlet
-      product.stockByOutlet = {
-        ...product.stockByOutlet,
-        [transfer.from_outlet_id]: Math.max(
-          0,
-          product.stockByOutlet[transfer.from_outlet_id] ?? 0 - item.quantity
-        ),
-      };
-
-      // Increment to to_outlet
-      product.stockByOutlet = {
-        ...product.stockByOutlet,
-        [transfer.to_outlet_id]: Math.max(
-          0,
-          product.stockByOutlet[transfer.to_outlet_id] ?? 0 + item.quantity
-        ),
-      };
-
-      // Log movements
-      mockDb.movements = mockDb.movements ?? [];
-      mockDb.movements.unshift({
-        id: mockId("mvt"),
-        outletId: transfer.from_outlet_id,
-        productId: item.product_id,
-        productName: item.product_variant_id ? `Variant ${item.product_variant_id}` : item.product_id,
-        type: "transfer_out" as const,
-        quantity: item.quantity,
-        reason: "Stock transfer out",
-        balanceAfter: (product.stockByOutlet[transfer.from_outlet_id] ?? 0),
-        createdAt: new Date().toISOString(),
-        createdBy: "",
-      });
-      mockDb.movements.unshift({
-        id: mockId("mvt"),
-        outletId: transfer.to_outlet_id,
-        productId: item.product_id,
-        productName: item.product_variant_id ? `Variant ${item.product_variant_id}` : item.product_id,
-        type: "transfer_in" as const,
-        quantity: item.quantity,
-        reason: "Stock transfer in",
-        balanceAfter: (product.stockByOutlet[transfer.to_outlet_id] ?? 0),
-        createdAt: new Date().toISOString(),
-        createdBy: "",
-      });
-    }
+    transfer.items.forEach((item) => {
+      adjustMockStock(item.productId, transfer.fromOutletId, -item.quantity);
+      adjustMockStock(item.productId, transfer.toOutletId, item.quantity);
+      const product = mockProduct(item.productId);
+      mockDb.movements.unshift(
+        {
+          id: mockId("m"),
+          productId: item.productId,
+          productName: product?.name ?? "",
+          outletId: transfer.fromOutletId,
+          type: "transfer_out",
+          quantity: -item.quantity,
+          reason: `Transfer ${transfer.id}`,
+          balanceAfter: product?.stockByOutlet[transfer.fromOutletId] ?? 0,
+          createdAt: new Date().toISOString(),
+          createdBy: "",
+        },
+        {
+          id: mockId("m"),
+          productId: item.productId,
+          productName: product?.name ?? "",
+          outletId: transfer.toOutletId,
+          type: "transfer_in",
+          quantity: item.quantity,
+          reason: `Transfer ${transfer.id}`,
+          balanceAfter: product?.stockByOutlet[transfer.toOutletId] ?? 0,
+          createdAt: new Date().toISOString(),
+          createdBy: "",
+        }
+      );
+    });
 
     transfer.status = "completed";
-    transfer.completed_at = new Date().toISOString();
-    return transfer;
+    transfer.completedAt = new Date().toISOString();
+    return { ...transfer, items: transfer.items.map((item) => ({ ...item })) };
   }
-  const res = await apiRequest<StockTransferCompleteResponse>(
-    `/stock-transfers/${transferId}/complete`,
-    { method: "POST" }
-  );
-  return res.transfer;
+
+  const data = await apiRequest<Raw>(`/stock-transfers/${id}/complete`, { method: "POST" });
+  return mapTransfer(data);
 }
 
-export async function getStockTransfer(
-  businessId: string,
-  transferId: string
-): Promise<StockTransfer> {
+export async function getStockTransfer(id: string): Promise<StockTransfer> {
   if (USE_MOCK_API) {
-    return mockDb.stockTransfers?.find((t) => t.id === transferId) ?? {
-      id: transferId,
-      business_id: businessId,
-      from_outlet_id: "",
-      to_outlet_id: "",
-      status: "draft",
-      completed_at: undefined,
-      notes: undefined,
-      created_at: new Date().toISOString(),
-      items: [],
-    };
+    const transfer = mockDb.stockTransfers.find((item) => item.id === id);
+    if (!transfer) throw new Error("Transfer not found");
+    return { ...transfer, items: transfer.items.map((item) => ({ ...item })) };
   }
-  const res = await apiRequest<{ transfer: StockTransfer }>(
-    `/stock-transfers/${transferId}?business_id=${businessId}`
-  );
-  return res.transfer;
-}
-
-
-// Mock data helpers
-export function mockId(prefix: string) {
-  let counter = 0;
-  counter += 1;
-  return `${prefix}-${Date.now().toString(36)}-${counter}`;
+  return mapTransfer(await apiRequest<Raw>(`/stock-transfers/${id}`));
 }

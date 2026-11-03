@@ -2,7 +2,9 @@ import type { LucideIcon } from "lucide-react";
 import {
   BarChart3,
   Boxes,
+  Building2,
   ChefHat,
+  ClipboardCheck,
   ClipboardList,
   CreditCard,
   Flame,
@@ -26,6 +28,8 @@ export type NavItem = {
   icon: LucideIcon;
   permission?: string;
   permissions?: string[];
+  /** Only visible to platform administrators (billing administration). */
+  platformAdmin?: boolean;
   description?: string;
   count?: number;
 };
@@ -131,6 +135,13 @@ export const navGroups: NavGroup[] = [
         count: 4,
       },
       {
+        label: "Stocktakes",
+        href: "/stocktakes",
+        icon: ClipboardCheck,
+        permission: "inventory.view",
+        description: "Count stock and post adjustments",
+      },
+      {
         label: "Recipes",
         href: "/recipes",
         icon: ChefHat,
@@ -197,6 +208,14 @@ export const navGroups: NavGroup[] = [
         icon: CreditCard,
         description: "Plan, usage limits, and billing",
       },
+      {
+        label: "Admin billing",
+        href: "/admin/billing",
+        icon: Building2,
+        permission: "platform.admin",
+        platformAdmin: true,
+        description: "Platform subscriptions and revenue",
+      },
     ],
   },
 ];
@@ -208,11 +227,12 @@ export const bottomNavItems: NavItem[] = [
   { label: "Stock", href: "/inventory", icon: Boxes, permission: "inventory.view" },
 ];
 
-export function filterNavGroups(has: (permission: string) => boolean): NavGroup[] {
+export function filterNavGroups(has: (permission: string) => boolean, isPlatformAdmin = false): NavGroup[] {
   return navGroups
     .map((group) => ({
       ...group,
       items: group.items.filter((item) => {
+        if (item.platformAdmin && !isPlatformAdmin) return false;
         if (item.permissions?.length) return item.permissions.some(has);
         return !item.permission || has(item.permission);
       }),

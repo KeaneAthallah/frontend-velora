@@ -20,7 +20,7 @@ import { listCustomers } from "@/lib/api/customers";
 import { listTransactions } from "@/lib/api/sales";
 import { listSuppliers } from "@/lib/api/purchasing";
 import { filterNavGroups } from "@/lib/navigation";
-import { usePermissions } from "@/lib/auth/auth-context";
+import { useAuth, usePermissions } from "@/lib/auth/auth-context";
 
 type Entry = {
   id: string;
@@ -42,6 +42,7 @@ export function CommandPalette({
 }) {
   const router = useRouter();
   const { has } = usePermissions();
+  const { session } = useAuth();
   const [query, setQuery] = React.useState("");
   const [active, setActive] = React.useState(0);
   const [mounted, setMounted] = React.useState(false);
@@ -103,7 +104,7 @@ export function CommandPalette({
   });
 
   const groups = React.useMemo(() => {
-    const navigation = filterNavGroups(has)
+    const navigation = filterNavGroups(has, session?.isPlatformAdmin)
       .map((group) => ({
         label: group.label,
         entries: group.items
@@ -171,7 +172,7 @@ export function CommandPalette({
       return [...navigation, { label: "Matching records", entries: found }];
     }
     return navigation;
-  }, [has, query, canSearch, customers.data, products.data, transactions.data, suppliers.data]);
+  }, [has, session?.isPlatformAdmin, query, canSearch, customers.data, products.data, transactions.data, suppliers.data]);
 
   const flat = React.useMemo(() => groups.flatMap((group) => group.entries), [groups]);
 

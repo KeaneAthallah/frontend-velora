@@ -1021,14 +1021,44 @@ export type CashMovement = {
   createdAt: string;
 };
 
+export type StocktakeStatus = "draft" | "in_progress" | "completed" | "cancelled";
+
+export type StocktakeItem = {
+  id: string;
+  productId: string;
+  productName?: string;
+  sku?: string;
+  expectedQuantity: number;
+  countedQuantity: number;
+};
+
+export type Stocktake = {
+  id: string;
+  outletId: string;
+  outletName?: string;
+  status: StocktakeStatus;
+  notes: string | null;
+  createdAt: string;
+  completedAt: string | null;
+  items: StocktakeItem[];
+};
+
+export type StockTransferStatus = "draft" | "approved" | "in_transit" | "completed" | "cancelled";
+
+export type StockTransferItem = {
+  id: string;
+  productId: string;
+  productName?: string;
+  quantity: number;
+};
+
 export type StockTransfer = {
   id: string;
-  business_id: string;
-  from_outlet_id: string;
-  to_outlet_id: string;
-  status: "draft" | "approved" | "in_transit" | "completed";
-  notes?: string;
-  completed_at?: string;
-  created_at: string;
-  items: { product_id: string; product_variant_id?: string; quantity: number }[];
+  fromOutletId: string;
+  toOutletId: string;
+  status: StockTransferStatus;
+  notes: string | null;
+  createdAt: string;
+  completedAt: string | null;
+  items: StockTransferItem[];
 };

@@ -66,6 +66,7 @@ import type {
   SubscriptionPayment as TypeSubscriptionPayment,
   SubscriptionHistoryEntry as TypeSubscriptionHistoryEntry,
   AdminBusinessRow,
+  Stocktake,
   StockTransfer,
   TaxRate,
   Transaction,
@@ -136,6 +137,7 @@ export const mockDb: {
   registerShifts: RegisterShift[];
   cashMovements: CashMovement[];
   stockTransfers: StockTransfer[];
+  stocktakes: Stocktake[];
   adminBusinesses: AdminBusinessRow[];
   allPlans: Array<{ id: string; slug: string; name: string }>;
 } = {
@@ -229,8 +231,121 @@ export const mockDb: {
   ],
   registerShifts: [],
   cashMovements: [],
-  stockTransfers: [],
-  adminBusinesses: [],
+  stockTransfers: [
+    {
+      id: "st-1",
+      fromOutletId: "o1",
+      toOutletId: "o2",
+      status: "draft",
+      notes: "Restock Kemang for the weekend",
+      createdAt: new Date(Date.now() - 2 * 3600000).toISOString(),
+      completedAt: null,
+      items: [
+        { id: "sti-1", productId: "p1", productName: "Espresso", quantity: 24 },
+        { id: "sti-2", productId: "p10", productName: "Butter Croissant", quantity: 12 },
+      ],
+    },
+    {
+      id: "st-2",
+      fromOutletId: "o2",
+      toOutletId: "o1",
+      status: "completed",
+      notes: null,
+      createdAt: new Date(Date.now() - 26 * 3600000).toISOString(),
+      completedAt: new Date(Date.now() - 25 * 3600000).toISOString(),
+      items: [{ id: "sti-3", productId: "p9", productName: "Jasmine Silver Needle", quantity: 6 }],
+    },
+  ],
+  stocktakes: [
+    {
+      id: "stk-1",
+      outletId: "o1",
+      status: "in_progress",
+      notes: "Weekly count — bar",
+      createdAt: new Date(Date.now() - 30 * 3600000).toISOString(),
+      completedAt: null,
+      items: [
+        {
+          id: "stki-1",
+          productId: "p1",
+          productName: "Espresso",
+          sku: "COF-ESP-01",
+          expectedQuantity: 128,
+          countedQuantity: 126,
+        },
+        {
+          id: "stki-2",
+          productId: "p2",
+          productName: "Cappuccino",
+          sku: "COF-CAP-01",
+          expectedQuantity: 86,
+          countedQuantity: 86,
+        },
+      ],
+    },
+  ],
+  adminBusinesses: [
+    {
+      id: "b1",
+      name: mockBusiness.name,
+      slug: "velora-demo",
+      businessStatus: "active",
+      createdAt: new Date(Date.now() - 90 * 86400000).toISOString(),
+      subscription: {
+        id: "sub-1",
+        status: "active",
+        billingPeriod: "monthly",
+        plan: "basic",
+        planName: "Basic",
+        trialEndsAt: null,
+        endsAt: new Date(Date.now() + 21 * 86400000).toISOString(),
+        daysRemaining: 21,
+        cancelAtPeriodEnd: false,
+        pendingPlan: null,
+      },
+      usage: { products: 16, customers: 12, outlets: 2, users: 4, transactionsPerMonth: 340 },
+    },
+    {
+      id: "b2",
+      name: "Copper & Co",
+      slug: "copper-and-co",
+      businessStatus: "active",
+      createdAt: new Date(Date.now() - 40 * 86400000).toISOString(),
+      subscription: {
+        id: "sub-2",
+        status: "trialing",
+        billingPeriod: "monthly",
+        plan: "trial",
+        planName: "Free Trial",
+        trialEndsAt: new Date(Date.now() + 4 * 86400000).toISOString(),
+        endsAt: new Date(Date.now() + 4 * 86400000).toISOString(),
+        daysRemaining: 4,
+        cancelAtPeriodEnd: false,
+        pendingPlan: null,
+      },
+      usage: { products: 42, customers: 118, outlets: 1, users: 2, transactionsPerMonth: 96 },
+    },
+    {
+      id: "b3",
+      name: "Kopi Kecil",
+      slug: "kopi-kecil",
+      businessStatus: "active",
+      createdAt: new Date(Date.now() - 15 * 86400000).toISOString(),
+      subscription: {
+        id: "sub-3",
+        status: "past_due",
+        billingPeriod: "yearly",
+        plan: "pro",
+        planName: "Pro",
+        trialEndsAt: null,
+        endsAt: new Date(Date.now() - 2 * 86400000).toISOString(),
+        daysRemaining: 0,
+        cancelAtPeriodEnd: true,
+        pendingPlan: null,
+      },
+      usage: { products: 210, customers: 640, outlets: 3, users: 9, transactionsPerMonth: 1180 },
+    },
+  ],
   allPlans: [{ id: "1", slug: "trial", name: "Free Trial" }, { id: "2", slug: "basic", name: "Basic" }, { id: "3", slug: "pro", name: "Pro" }],
 };
 

@@ -2,10 +2,10 @@
 
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownLeft, ArrowUpRight, Lock, Plus, Unlock, Wallet } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, History, Lock, Plus, Unlock, Wallet } from "lucide-react";
 import { PageHeader, Stat } from "@/components/ui/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
-import { Badge, Button, EmptyState, Field, Input, Select, Textarea } from "@/components/ui/primitives";
+import { Badge, Button, EmptyState, Field, Input, Textarea } from "@/components/ui/primitives";
 import { Dialog } from "@/components/ui/dialog";
 import { DataTable, type Column } from "@/components/ui/table";
 import { AccessDenied, InlineError, SectionSkeleton } from "@/components/ui/states";
@@ -19,7 +19,7 @@ import {
   openShift,
   recordCashMovement,
 } from "@/lib/api/shifts";
-import type { CashMovement, CashMovementType, CashRegister, RegisterShift } from "@/lib/api/types";
+import type { CashMovementType, CashRegister, RegisterShift } from "@/lib/api/types";
 import { formatCurrency, formatDateTime } from "@/lib/formatting/currency";
 import { useAuth, usePermissions } from "@/lib/auth/auth-context";
 import { useBusiness } from "@/lib/business/context";
@@ -41,7 +41,6 @@ export default function ShiftsPage() {
 
   const registersQuery = useQuery({ queryKey: ["cash-registers"], queryFn: listCashRegisters });
   const shiftsQuery = useQuery({ queryKey: ["shifts"], queryFn: listShifts });
-  const cashMovementsCache = new Map<string, CashMovement[]>();
 
   const registers = registersQuery.data ?? [];
   const shifts = shiftsQuery.data ?? [];
@@ -52,6 +51,7 @@ export default function ShiftsPage() {
   const [openDialog, setOpenDialog] = React.useState<OpenShiftTarget>(null);
   const [closeTarget, setCloseTarget] = React.useState<RegisterShift | null>(null);
   const [movementTarget, setMovementTarget] = React.useState<{ shift: RegisterShift; type: CashMovementType } | null>(null);
+  const [movementsTarget, setMovementsTarget] = React.useState<RegisterShift | null>(null);
   const [registerDialog, setRegisterDialog] = React.useState(false);
 
   const [openRegisterId, setOpenRegisterId] = React.useState("");
@@ -63,6 +63,19 @@ export default function ShiftsPage() {
   const [registerName, setRegisterName] = React.useState("");
   const [registerCode, setRegisterCode] = React.useState("");
   const [formError, setFormError] = React.useState<string | null>(null);
+
+  const movementsQuery = useQuery({
+    queryKey: ["shift-movements", movementsTarget?.id],
+    queryFn: () => listCashMovements(movementsTarget!.id),
+    enabled: Boolean(movementsTarget),
+  });
+  const shiftMovements = movementsQuery.data ?? [];
+  const cashIn = shiftMovements
+    .filter((movement) => movement.type === "in")
+    .reduce((total, movement) => total + movement.amount, 0);
+  const cashOut = shiftMovements
+    .filter((movement) => movement.type === "out")
+    .reduce((total, movement) => total + movement.amount, 0);
 
   const invalidateShifts = () => queryClient.invalidateQueries({ queryKey: ["shifts"] });
 
@@ -106,6 +119,7 @@ export default function ShiftsPage() {
       }),
     onSuccess: () => {
       invalidateShifts();
+      queryClient.invalidateQueries({ queryKey: ["shift-movements"] });
       setMovementTarget(null);
       setMovementAmount("");
       setMovementReason("");
@@ -178,6 +192,23 @@ export default function ShiftsPage() {
       align: "right",
       cell: (shift) => <Variance value={shift.difference} currency={currency} />,
     },
+    {
+      id: "movements",
+      header: "Movements",
+      align: "right",
+      cell: (shift) => (
+        <Button
+          variant="quiet"
+          size="sm"
+          onClick={(event) => {
+            event.stopPropagation();
+            setMovementsTarget(shift);
+          }}
+        >
+          History
+        </Button>
+      ),
+    },
   ];
 
   return (
@@ -226,6 +257,9 @@ export default function ShiftsPage() {
                     </Button>
                     <Button variant="quiet" size="sm" onClick={() => { resetForm(); setMovementTarget({ shift, type: "out" }); }}>
                       <ArrowUpRight aria-hidden="true" /> Cash out
+                    </Button>
+                    <Button variant="quiet" size="sm" onClick={() => setMovementsTarget(shift)}>
+                      <History aria-hidden="true" /> History
                     </Button>
                     <Button
                       variant="secondary"
@@ -549,6 +583,94 @@ export default function ShiftsPage() {
               placeholder="FRONT"
             />
           </Field>
+        </div>
+      </Dialog>
+
+      {/* ── Cash movement history ── */}
+      <Dialog
+        open={Boolean(movementsTarget)}
+        onClose={() => setMovementsTarget(null)}
+        title="Cash movements"
+        description={
+          movementsTarget
+            ? `${movementsTarget.registerName ?? "Register"} · opened ${formatDateTime(movementsTarget.openedAt)}`
+            : undefined
+        }
+        width={520}
+        footer={
+          <Button variant="quiet" onClick={() => setMovementsTarget(null)}>
+            Close
+          </Button>
+        }
+      >
+        <div className="stack">
+          <div className="grid-2" style={{ gap: 12 }}>
+            <div className="row row-between">
+              <span className="hint">Cash in</span>
+              <b className="num" style={{ color: "hsl(var(--success))" }}>
+                {formatCurrency(cashIn, currency)}
+              </b>
+            </div>
+            <div className="row row-between">
+              <span className="hint">Cash out</span>
+              <b className="num" style={{ color: "hsl(var(--danger))" }}>
+                {formatCurrency(cashOut, currency)}
+              </b>
+            </div>
+          </div>
+
+          {movementsQuery.isLoading ? (
+            <SectionSkeleton rows={3} />
+          ) : movementsQuery.isError ? (
+            <InlineError
+              title="Could not load movements"
+              error={movementsQuery.error}
+              onRetry={() => movementsQuery.refetch()}
+            />
+          ) : shiftMovements.length === 0 ? (
+            <EmptyState
+              compact
+              title="No cash movements"
+              description="Cash in and cash out recorded during this shift will show here."
+            />
+          ) : (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Type</th>
+                    <th>Reason</th>
+                    <th style={{ textAlign: "right" }}>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shiftMovements.map((movement) => (
+                    <tr key={movement.id}>
+                      <td className="cell-muted">{formatDateTime(movement.createdAt)}</td>
+                      <td>
+                        <Badge tone={movement.type === "in" ? "success" : "warning"}>
+                          {movement.type === "in" ? "In" : "Out"}
+                        </Badge>
+                      </td>
+                      <td>{movement.reason || "—"}</td>
+                      <td className="num" style={{ textAlign: "right" }}>
+                        {movement.type === "out" ? "−" : "+"}
+                        {formatCurrency(movement.amount, currency)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {movementsTarget ? (
+            <p className="hint" style={{ margin: 0 }}>
+              Expected drawer: opening {formatCurrency(movementsTarget.openingCash, currency)} plus cash in, minus cash
+              out and any cash refunds.
+            </p>
+          ) : null}
         </div>
       </Dialog>
     </div>

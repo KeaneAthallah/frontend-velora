@@ -187,7 +187,12 @@ export async function recordCashMovement(
 
 export async function listCashMovements(shiftId: string): Promise<CashMovement[]> {
   if (USE_MOCK_API) {
-    return (mockDb.cashMovements ?? []) as CashMovement[];
+    return (mockDb.cashMovements ?? [])
+      .filter((movement) => movement.shiftId === shiftId)
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+      .map((movement) => ({ ...movement }));
   }
-  return apiRequest<{ cashMovements: CashMovement[] }>(`/shifts/${shiftId}/cash-movements`).then((res) => res.cashMovements);
+  const data = await apiRequest<{ data?: Raw[] }>(`/shifts/${shiftId}/cash-movements`);
+  const items = Array.isArray(data?.data) ? data.data : [];
+  return items.map(mapMovement);
 }

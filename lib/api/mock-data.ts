@@ -27,17 +27,6 @@ import type {
   Transaction,
   User,
 } from "./types";
-export type StockTransfer = {
-  id: string;
-  business_id: string;
-  from_outlet_id: string;
-  to_outlet_id: string;
-  status: "draft" | "approved" | "in_transit" | "completed";
-  notes?: string;
-  created_at: string;
-  items: { product_id: string; product_variant_id?: string; quantity: number }[];
-};
-
 /* A deterministic, relative-to-today fixture set for local development and
    visual verification. It is only read when NEXT_PUBLIC_USE_MOCK_API is on. */
 
@@ -964,8 +953,7 @@ export const mockSession: Session = {
   business: mockBusiness,
   outlet: mockOutlets[0],
   permissions: ["*"],
+  isPlatformAdmin: true,
 };
-
-export const mockStockTransfers: StockTransfer[] = [];
 
 export const now = () => new Date().toISOString();

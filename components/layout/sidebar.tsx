@@ -23,7 +23,7 @@ export function Sidebar({
   const { has } = usePermissions();
   const { session } = useAuth();
   const { outlet } = useBusiness();
-  const groups = React.useMemo(() => filterNavGroups(has), [has]);
+  const groups = React.useMemo(() => filterNavGroups(has, session?.isPlatformAdmin), [has, session?.isPlatformAdmin]);
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
