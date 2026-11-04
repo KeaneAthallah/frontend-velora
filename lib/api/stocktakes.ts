@@ -110,7 +110,11 @@ export async function saveStocktakeCounts(
   );
 }
 
-async function postCounts(id: string, path: "post" | "cancel"): Promise<Stocktake> {
+async function postCounts(
+  id: string,
+  path: "post" | "cancel",
+  options: { confirmZeroCount?: boolean } = {}
+): Promise<Stocktake> {
   if (USE_MOCK_API) {
     const stocktake = mockDb.stocktakes.find((item) => item.id === id);
     if (!stocktake) throw new Error("Stocktake not found");
@@ -145,12 +149,17 @@ async function postCounts(id: string, path: "post" | "cancel"): Promise<Stocktak
     stocktake.completedAt = new Date().toISOString();
     return { ...stocktake, items: stocktake.items.map((item) => ({ ...item })) };
   }
-  const raw = await apiRequest<Raw>(`/stocktakes/${id}/${path}`, { method: "POST" });
+  const raw = await apiRequest<Raw>(`/stocktakes/${id}/${path}`, {
+    method: "POST",
+    // The API refuses an all-zero count while stock is on hand unless the wipe
+    // is acknowledged; the UI only sets this after the confirmation dialog.
+    body: path === "post" && options.confirmZeroCount ? { confirm_zero_count: true } : undefined,
+  });
   return mapStocktake(raw);
 }
 
-export function postStocktake(id: string): Promise<Stocktake> {
-  return postCounts(id, "post");
+export function postStocktake(id: string, options: { confirmZeroCount?: boolean } = {}): Promise<Stocktake> {
+  return postCounts(id, "post", options);
 }
 
 export function cancelStocktake(id: string): Promise<Stocktake> {

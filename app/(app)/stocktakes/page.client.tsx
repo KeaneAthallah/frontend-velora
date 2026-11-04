@@ -100,8 +100,14 @@ export default function StocktakesPage() {
 
   const postMutation = useMutation({
     mutationFn: async () => {
-      await saveStocktakeCounts(countTarget!.id, { items: rows(countTarget!) });
-      return postStocktake(countTarget!.id);
+      const target = countTarget!;
+      // The confirmation dialog above is the explicit acknowledgement the API
+      // requires before an all-zero count wipes the outlet's balances.
+      const allZero =
+        target.items.length > 0 &&
+        target.items.every((item) => (Number(counts[item.id] ?? 0) || 0) === 0);
+      await saveStocktakeCounts(target.id, { items: rows(target) });
+      return postStocktake(target.id, { confirmZeroCount: allZero });
     },
     onSuccess: () => {
       invalidate();
