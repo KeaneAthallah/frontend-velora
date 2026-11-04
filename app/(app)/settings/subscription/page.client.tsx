@@ -21,6 +21,7 @@ import {
   listPayments,
   listPlans,
   resumeSubscription,
+  syncPayment,
 } from "@/lib/api/subscriptions";
 import { updateAdminPlan } from "@/lib/api/admin";
 import type { SubscriptionDetail, SubscriptionHistoryEntry, SubscriptionInvoice, SubscriptionPayment } from "@/lib/api/types";
@@ -87,6 +88,27 @@ export default function SubscriptionPage() {
     }
   };
 
+  // Pull the provider's current status for a pending payment. This is how a
+  // sandbox checkout settles without waiting for the Midtrans webhook.
+  const syncMutation = useMutation({
+    mutationFn: (paymentId: string) => syncPayment(paymentId),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["subscription-payments"] });
+      queryClient.invalidateQueries({ queryKey: ["subscription-invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["subscription"] });
+      const paid = result.status === "paid";
+      push({
+        title: paid ? "Payment confirmed" : `Payment is still ${result.status}`,
+        description: paid
+          ? "The subscription now reflects this payment."
+          : "The provider has not settled this payment yet. Try again after paying.",
+        variant: paid ? "success" : "warning",
+      });
+    },
+    onError: (error: Error) =>
+      push({ title: "Could not check the payment", description: error.message, variant: "error" }),
+  });
+
   const handleResume = async () => {
     try {
       await resumeSubscription();
@@ -101,6 +123,7 @@ export default function SubscriptionPage() {
 
   const canManage = sub.data?.canManage ?? false;
   const currentSlug = sub.plan?.slug ?? "trial";
+  const syncingPaymentId = syncMutation.isPending ? (syncMutation.variables ?? null) : null;
 
   if (!canManage && !sub.isActive) {
     return (
@@ -351,11 +374,22 @@ export default function SubscriptionPage() {
           ) : (
             <DataTable<SubscriptionPayment>
               rows={paymentQuery.data?.data ?? []}
-              columns={paymentColumns()}
+              columns={paymentColumns({
+                canManage,
+                syncingId: syncingPaymentId,
+                onSync: (payment) => syncMutation.mutate(payment.id),
+              })}
               rowId={(r) => r.id}
               loading={false}
               empty={<EmptyState title="No payments recorded" />}
-              mobile={(r) => <MobilePaymentRow row={r} />}
+              mobile={(r) => (
+                <MobilePaymentRow
+                  row={r}
+                  canManage={canManage}
+                  syncing={syncingPaymentId === r.id}
+                  onSync={() => syncMutation.mutate(r.id)}
+                />
+              )}
             />
           )}
         </CardBody>
@@ -436,7 +470,15 @@ function invoiceColumns(): Column<SubscriptionInvoice>[] {
   ];
 }
 
-function paymentColumns(): Column<SubscriptionPayment>[] {
+function paymentColumns({
+  canManage,
+  syncingId,
+  onSync,
+}: {
+  canManage: boolean;
+  syncingId: string | null;
+  onSync: (payment: SubscriptionPayment) => void;
+}): Column<SubscriptionPayment>[] {
   return [
     { id: "id", header: "ID", cell: (r) => <code style={{ fontSize: 11 }}>{r.id.slice(0, 12)}…</code>, width: 120 },
     { id: "provider", header: "Provider", cell: (r) => r.provider },
@@ -444,6 +486,30 @@ function paymentColumns(): Column<SubscriptionPayment>[] {
     { id: "status", header: "Status", cell: (r) => <Badge tone={r.status === "paid" ? "success" : r.status === "pending" ? "warning" : "danger"}>{r.status}</Badge> },
     { id: "created", header: "Created", cell: (r) => formatDate(r.createdAt) },
     { id: "paid_at", header: "Paid", cell: (r) => r.paidAt ? formatDateTime(r.paidAt) : "—" },
+    ...(canManage
+      ? [
+          {
+            id: "actions",
+            header: "",
+            align: "right" as const,
+            cell: (r: SubscriptionPayment) =>
+              r.status === "pending" ? (
+                <Button
+                  size="sm"
+                  variant="quiet"
+                  loading={syncingId === r.id}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSync(r);
+                  }}
+                >
+                  <RefreshCw style={{ width: 13, height: 13 }} aria-hidden="true" />
+                  Check status
+                </Button>
+              ) : null,
+          },
+        ]
+      : []),
   ];
 }
 
@@ -477,7 +543,17 @@ function MobileInvoiceRow({ row }: { row: SubscriptionInvoice }) {
   );
 }
 
-function MobilePaymentRow({ row }: { row: SubscriptionPayment }) {
+function MobilePaymentRow({
+  row,
+  canManage,
+  syncing,
+  onSync,
+}: {
+  row: SubscriptionPayment;
+  canManage: boolean;
+  syncing: boolean;
+  onSync: () => void;
+}) {
   return (
     <div className="record">
       <div className="record__top">
@@ -488,6 +564,14 @@ function MobilePaymentRow({ row }: { row: SubscriptionPayment }) {
         <span><b>{formatCurrency(row.amount)}</b></span>
         <span>{row.id.slice(0, 12)}…</span>
       </div>
+      {canManage && row.status === "pending" ? (
+        <div className="row" style={{ marginTop: 8 }}>
+          <Button size="sm" variant="secondary" loading={syncing} onClick={onSync}>
+            <RefreshCw style={{ width: 13, height: 13 }} aria-hidden="true" />
+            Check payment status
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
