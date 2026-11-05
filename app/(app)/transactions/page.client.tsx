@@ -11,6 +11,7 @@ import {
   Ban,
   ChevronRight,
   CreditCard,
+  Printer,
   Receipt,
   Search,
   SlidersHorizontal,
@@ -477,6 +478,10 @@ export default function TransactionsPage() {
                   Void sale
                 </Button>
               ) : null}
+              <Button variant="secondary" onClick={() => window.print()}>
+                <Printer aria-hidden="true" />
+                Print
+              </Button>
             </>
           ) : null
         }
