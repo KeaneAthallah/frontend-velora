@@ -10,6 +10,12 @@ import { useAuth, usePermissions } from "@/lib/auth/auth-context";
 import { useBusiness } from "@/lib/business/context";
 import { defaultRoute } from "@/lib/navigation";
 
+const INDUSTRIES = [
+  { value: "food_beverage", label: "F&B / Restaurant" },
+  { value: "retail", label: "Kios / Retail" },
+  { value: "barber_salon", label: "Barber / Salon" },
+  { value: "distributor", label: "Distributor / Wholesale" },
+];
 const CURRENCIES = ["IDR", "USD", "EUR", "GBP", "SGD", "MYR"];
 
 /** Short outlet code derived from the name, e.g. "Main outlet" → "MAIN". */
@@ -25,6 +31,7 @@ export default function OnboardingPage() {
   const router = useRouter();
 
   const [businessName, setBusinessName] = React.useState("");
+  const [industry, setIndustry] = React.useState("food_beverage");
   const [currency, setCurrency] = React.useState("IDR");
   const [timezone, setTimezone] = React.useState("Asia/Jakarta");
   const [outletName, setOutletName] = React.useState("Main outlet");
@@ -99,6 +106,7 @@ export default function OnboardingPage() {
           name: business,
           currency,
           timezone: timezone.trim() || "Asia/Jakarta",
+          industry,
         });
         businessId = created.id || null;
         setCreatedBusinessId(businessId);
@@ -212,6 +220,19 @@ export default function OnboardingPage() {
                     />
                   </Field>
                   <div className="grid-2">
+                    <Field label="Industry" htmlFor="industry">
+                      <Select
+                        id="industry"
+                        value={industry}
+                        onChange={(event) => setIndustry(event.target.value)}
+                      >
+                        {INDUSTRIES.map((item) => (
+                          <option key={item.value} value={item.value}>
+                            {item.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
                     <Field label="Currency" htmlFor="currency">
                       <Select
                         id="currency"

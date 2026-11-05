@@ -13,7 +13,7 @@ type BackendUser = {
   business_memberships?: {
     business_id: number | string;
     status?: string;
-    business?: { id: number | string; name: string; currency?: string; timezone?: string };
+    business?: { id: number | string; name: string; currency?: string; timezone?: string; industry?: string };
     role?: {
       name?: string;
       slug?: string;
@@ -40,6 +40,7 @@ function mapSessionFromMe(user: BackendUser): Session {
         name: membership.business.name,
         currency: membership.business.currency ?? "IDR",
         timezone: membership.business.timezone ?? "Asia/Jakarta",
+        industry: membership.business.industry,
       }
     : {
         id: String(membership?.business_id ?? ""),

@@ -157,11 +157,12 @@ function mapHistoryEntry(raw: Raw): SubscriptionHistoryEntry {
 
 /* ───────────────────────────── public ───────────────────────────── */
 
-export async function getPricing(): Promise<PricingPayload> {
+export async function getPricing(industry?: string): Promise<PricingPayload> {
   if (USE_MOCK_API) {
     return mockPricing();
   }
-  const raw = await apiRequest<Raw>("/plans");
+  const qs = industry ? `?industry=${encodeURIComponent(industry)}` : "";
+  const raw = await apiRequest<Raw>(`/plans${qs}`);
   return {
     currency: raw.currency ?? "IDR",
     trialDays: num(raw.trial_days),

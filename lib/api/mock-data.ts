@@ -65,6 +65,7 @@ export const mockBusiness: Business = {
   currency: "IDR",
   timezone: "Asia/Jakarta",
   address: "Jl. Jenderal Sudirman No. 21, Jakarta Selatan",
+  industry: "food_beverage",
 };
 
 export const mockOutlets: Outlet[] = [

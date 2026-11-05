@@ -5,23 +5,31 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Check, X } from "lucide-react";
-import { Segmented } from "@/components/ui/primitives";
+import { Segmented, Select } from "@/components/ui/primitives";
 import { getPricing, createCheckout } from "@/lib/api/subscriptions";
 import { useAuth } from "@/lib/auth/auth-context";
 import { formatCurrency } from "@/lib/formatting/currency";
 
 export const instant = false;
 
-const PLANS_ORDER = ["trial", "basic", "pro"] as const;
+const INDUSTRIES = [
+  { value: "food_beverage", label: "F&B / Restaurant" },
+  { value: "retail", label: "Kios / Retail" },
+  { value: "barber_salon", label: "Barber / Salon" },
+  { value: "distributor", label: "Distributor / Wholesale" },
+];
+
+const PLANS_ORDER = ["trial", "basic", "pro", "enterprise"] as const;
 
 export default function PricingPage() {
   const { session } = useAuth();
   const router = useRouter();
   const [period, setPeriod] = React.useState<"monthly" | "yearly">("monthly");
+  const [industry, setIndustry] = React.useState("food_beverage");
 
   const { data, isLoading } = useQuery({
-    queryKey: ["pricing"],
-    queryFn: getPricing,
+    queryKey: ["pricing", industry],
+    queryFn: () => getPricing(industry),
     staleTime: 5 * 60_000,
   });
 
@@ -55,6 +63,11 @@ export default function PricingPage() {
         <h1 className="pr-hero__title">Simple pricing that grows with you.</h1>
         <p className="pr-hero__sub">Start free for 30 days. Upgrade when you need more features, more outlets, or more power.</p>
         <div className="pr-toggle">
+          <Select value={industry} onChange={(e) => setIndustry(e.target.value)}>
+            {INDUSTRIES.map((i) => (
+              <option key={i.value} value={i.value}>{i.label}</option>
+            ))}
+          </Select>
           <Segmented
             options={[
               { value: "monthly", label: "Monthly" },

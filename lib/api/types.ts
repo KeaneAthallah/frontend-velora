@@ -11,6 +11,7 @@ export type Business = {
   currency: string;
   timezone: string;
   address?: string;
+  industry?: string;
 };
 
 export type Outlet = {
@@ -760,7 +761,15 @@ export type ChannelMenuSnapshot = {
 export type Permission = string;
 export type Session = { user: User; business: Business; outlet: Outlet; permissions: Permission[]; subscription?: SubscriptionSummary; isPlatformAdmin?: boolean };
 
-export type ListParams = { page?: number; pageSize?: number; search?: string };
+export type Workspace = {
+  industry: string;
+  industryLabel: string;
+  modules: Record<string, boolean>;
+  features: Record<string, boolean>;
+  limits: Record<string, number | null>;
+  terminology: Record<string, string>;
+  defaultRoute: string;
+};
 
 // ───────────────────────────────────────────────────────────────────
 // Subscription & billing types

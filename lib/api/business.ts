@@ -9,6 +9,7 @@ function mapBusiness(business: any): Business {
     currency: business.currency ?? "IDR",
     timezone: business.timezone ?? "UTC",
     address: business.settings?.address ?? business.address ?? undefined,
+    industry: business.industry ?? undefined,
   };
 }
 
@@ -23,6 +24,7 @@ export async function createBusiness(input: {
   name: string;
   currency?: string;
   timezone?: string;
+  industry?: string;
 }): Promise<Business> {
   if (USE_MOCK_API) {
     return {
@@ -30,6 +32,7 @@ export async function createBusiness(input: {
       name: input.name,
       currency: input.currency ?? "IDR",
       timezone: input.timezone ?? "Asia/Jakarta",
+      industry: input.industry ?? "food_beverage",
     };
   }
   const data = await apiRequest<any>("/businesses", {
@@ -38,6 +41,7 @@ export async function createBusiness(input: {
       name: input.name,
       currency: input.currency || null,
       timezone: input.timezone || null,
+      industry: input.industry || null,
     },
   });
   return mapBusiness(data);
