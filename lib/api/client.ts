@@ -163,7 +163,8 @@ export async function apiRequest<T>(path: string, opts: RequestOptions = {}): Pr
   const outletId = typeof window !== "undefined" ? localStorage.getItem("outletId") : null;
   if (businessId) finalHeaders["X-Business-Id"] = businessId;
   if (outletId) finalHeaders["X-Outlet-Id"] = outletId;
-  if (headers["Content-Type"] === undefined) finalHeaders["Content-Type"] = "application/json";
+  const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
+  if (headers["Content-Type"] === undefined && !isFormData) finalHeaders["Content-Type"] = "application/json";
 
 
   const controller = typeof AbortController !== "undefined" && (signal ?? timeoutMs != null)
@@ -178,7 +179,7 @@ export async function apiRequest<T>(path: string, opts: RequestOptions = {}): Pr
     res = await fetch(url, {
       method,
       headers: finalHeaders,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: body !== undefined ? (isFormData ? body : JSON.stringify(body)) : undefined,
       credentials: "omit",
       signal: effectiveSignal,
     });

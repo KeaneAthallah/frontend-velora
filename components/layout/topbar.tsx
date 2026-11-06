@@ -15,7 +15,9 @@ import {
   Settings,
   Sun,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { Avatar, DropdownMenu, IconButton, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/primitives";
+import { unreadNotificationCount } from "@/lib/api/notifications";
 import { useTheme } from "@/components/providers/theme-provider";
 import { useAuth } from "@/lib/auth/auth-context";
 import { useOffline } from "@/lib/offline/provider";
@@ -28,6 +30,12 @@ export function Topbar({ onMenu, onSearch }: { onMenu: () => void; onSearch: (vi
   const { session, signOut } = useAuth();
   // The pill itself lives in OfflineStatus; the bell only needs the count.
   const { pending, failed } = useOffline();
+  const unread = useQuery({
+    queryKey: ["notifications", "unread-count"],
+    queryFn: unreadNotificationCount,
+    enabled: Boolean(session),
+    refetchInterval: 60_000,
+  });
 
   const ThemeIcon = resolved === "dark" ? Moon : Sun;
   const attention = pending + failed;
@@ -61,12 +69,17 @@ export function Topbar({ onMenu, onSearch }: { onMenu: () => void; onSearch: (vi
         trigger={
           <IconButton label="Notifications" aria-haspopup="menu" className="topbar__notify">
             <Bell aria-hidden="true" />
-            {attention > 0 ? <i className="topbar__notify-dot" aria-hidden="true" /> : null}
+            {attention > 0 || (unread.data ?? 0) > 0 ? <i className="topbar__notify-dot" aria-hidden="true" /> : null}
           </IconButton>
         }
         width={230}
         label="Notifications"
       >
+        <MenuLabel>Inbox</MenuLabel>
+        <MenuItem icon={<Bell aria-hidden="true" />} onSelect={() => router.push("/notifications")}>
+          Notifications{unread.data ? ` (${unread.data})` : ""}
+        </MenuItem>
+        <MenuSeparator />
         <MenuLabel>Needs attention</MenuLabel>
         <MenuItem icon={<ChefHat aria-hidden="true" />} onSelect={() => router.push("/kitchen")}>
           Kitchen tickets
