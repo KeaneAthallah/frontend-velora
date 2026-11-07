@@ -36,6 +36,7 @@ import {
   adjustIngredient,
   createIngredient,
   deleteIngredient,
+  getRecipeAvailability,
   listIngredientMovements,
   listIngredients,
   listRecipes,
@@ -48,6 +49,7 @@ import {
 import type {
   Ingredient,
   IngredientMovement,
+  ProductAvailability,
   RecipeLine,
   RecipeProduct,
 } from "@/lib/api/types";
@@ -76,6 +78,18 @@ function scopeLines(product: RecipeProduct | null, variantId: string): RecipeLin
   return product.recipeItems.filter((line) =>
     variantId ? line.productVariantId === variantId : !line.productVariantId
   );
+}
+
+/** "N sellable now" for a product, or null when nothing limits it. */
+function sellableLabel(availability: ProductAvailability): string {
+  if (availability.status === "out_of_stock") return "Sold out";
+  return `${formatNumber(availability.sellable ?? 0)} sellable now`;
+}
+
+function sellableTone(availability: ProductAvailability): "danger" | "warning" | "neutral" {
+  if (availability.status === "out_of_stock") return "danger";
+  if (availability.status === "low_stock") return "warning";
+  return "neutral";
 }
 
 function lineCost(line: RecipeItemInput, ingredients: Ingredient[]): number {
@@ -118,10 +132,26 @@ export default function RecipesPage() {
     staleTime: 60_000,
   });
 
+  // Same endpoint the register gates its tiles with: how many units the outlet
+  // can still make from the ingredients on hand, and which one runs out first.
+  const availabilityQuery = useQuery({
+    queryKey: ["recipe-availability", outletId],
+    queryFn: () => getRecipeAvailability(outletId ?? undefined),
+    enabled: has("recipes.view") && Boolean(outletId),
+    staleTime: 30_000,
+  });
+
+  const availabilityByProduct = React.useMemo(
+    () => new Map((availabilityQuery.data ?? []).map((row) => [row.productId, row])),
+    [availabilityQuery.data]
+  );
+
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["recipes"] });
     queryClient.invalidateQueries({ queryKey: ["ingredients"] });
     queryClient.invalidateQueries({ queryKey: ["ingredient-movements"] });
+    queryClient.invalidateQueries({ queryKey: ["recipe-availability"] });
+    queryClient.invalidateQueries({ queryKey: ["pos-availability"] });
     queryClient.invalidateQueries({ queryKey: ["pos-menu"] });
   };
 
@@ -232,6 +262,8 @@ export default function RecipesPage() {
               <div className="record-list">
                 {products.map((product) => {
                   const margin = product.price > 0 ? ((product.price - product.recipeCost) / product.price) * 100 : 0;
+                  const availability = availabilityByProduct.get(product.id);
+                  const capped = availability ? !availability.unlimited : false;
                   return (
                     <div className="record" key={product.id} style={{ alignItems: "center" }}>
                       <div className="row" style={{ minWidth: 0, flex: 1 }}>
@@ -244,6 +276,9 @@ export default function RecipesPage() {
                             {product.categoryName || "Uncategorised"} · {product.sku} ·{" "}
                             {product.recipeItems.length}{" "}
                             {product.recipeItems.length === 1 ? "ingredient line" : "ingredient lines"}
+                            {capped && availability?.limiting
+                              ? ` · limited by ${availability.limiting.ingredientName}`
+                              : ""}
                           </div>
                         </div>
                       </div>
@@ -261,6 +296,9 @@ export default function RecipesPage() {
                           <Badge tone="warning">Uncosted</Badge>
                         ) : margin < 20 ? (
                           <Badge tone="danger">Low margin</Badge>
+                        ) : null}
+                        {capped && availability ? (
+                          <Badge tone={sellableTone(availability)}>{sellableLabel(availability)}</Badge>
                         ) : null}
                         <Button variant="secondary" size="sm" onClick={() => setRecipeTarget(product)}>
                           {canManageRecipes ? "Edit recipe" : "View recipe"}
@@ -381,6 +419,9 @@ export default function RecipesPage() {
 
       <RecipeDialog
         product={recipeTarget}
+        availability={
+          recipeTarget ? (availabilityByProduct.get(recipeTarget.id) ?? null) : null
+        }
         ingredients={ingredients}
         currency={currency}
         canManage={canManageRecipes}
@@ -436,6 +477,7 @@ export default function RecipesPage() {
 
 function RecipeDialog({
   product,
+  availability,
   ingredients,
   currency,
   canManage,
@@ -444,6 +486,7 @@ function RecipeDialog({
   onSave,
 }: {
   product: RecipeProduct | null;
+  availability: ProductAvailability | null;
   ingredients: Ingredient[];
   currency: string;
   canManage: boolean;
@@ -563,6 +606,24 @@ function RecipeDialog({
             {formatCurrency(total, currency)} · {margin.toFixed(0)}% margin
           </span>
         </div>
+
+        {availability ? (
+          <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+            <Badge tone={sellableTone(availability)}>{sellableLabel(availability)}</Badge>
+            {availability.limiting ? (
+              <span className="hint" style={{ margin: 0 }}>
+                {availability.limiting.ingredientName} runs out first ·{" "}
+                {formatNumber(availability.limiting.available, "en-GB")}{" "}
+                {availability.limiting.unit} left, {formatNumber(availability.limiting.requiredPerUnit, "en-GB")}{" "}
+                {availability.limiting.unit} per unit
+              </span>
+            ) : (
+              <span className="hint" style={{ margin: 0 }}>
+                Nothing tracked limits this item, so it stays sellable.
+              </span>
+            )}
+          </div>
+        ) : null}
 
         {lines.length === 0 ? (
           <p className="hint" style={{ margin: 0 }}>

@@ -41,6 +41,7 @@ export function mapSale(sale: any): Transaction {
     customerId: sale.customer_id ? String(sale.customer_id) : undefined,
     customerName: sale.customer?.name,
     items: (sale.items ?? []).map((item: any) => ({
+      saleItemId: item.id ? String(item.id) : undefined,
       productId: item.product_id ? String(item.product_id) : undefined,
       name: item.product_name ?? item.name ?? "",
       sku: item.sku ?? "",

@@ -10,8 +10,10 @@ import { normalizeProduct } from "./products";
 import type {
   Ingredient,
   IngredientMovement,
+  IngredientUsage,
   Paginated,
   Product,
+  ProductAvailability,
   RecipeLine,
   RecipeProduct,
 } from "./types";
@@ -459,4 +461,166 @@ export async function setRecipe(
     },
   });
   return normalizeRecipeProduct(data);
+}
+
+function normalizeUsage(raw: any): IngredientUsage {
+  return {
+    ingredientId: String(raw.ingredient_id),
+    name: raw.name ?? "",
+    sku: raw.sku ?? undefined,
+    unit: raw.unit ?? "",
+    remaining: Number(raw.remaining ?? 0),
+    consumed: Number(raw.consumed ?? 0),
+    received: Number(raw.received ?? 0),
+    reorderLevel: Number(raw.reorder_level ?? 0),
+    lowStock: Boolean(raw.low_stock),
+    trackInventory: raw.track_inventory !== false,
+    products: (raw.products ?? []).map((product: any) => ({
+      productId: String(product.product_id),
+      productName: product.product_name ?? null,
+      productVariantId:
+        product.product_variant_id == null ? null : String(product.product_variant_id),
+      quantity: Number(product.quantity ?? 0),
+      unit: product.unit ?? "",
+      quantityInIngredientUnit: Number(product.quantity_in_ingredient_unit ?? 0),
+      producible: product.producible ?? null,
+    })),
+  };
+}
+
+/**
+ * `GET /ingredients/dashboard` — one balance per ingredient, the stock already
+ * consumed, and every product whose recipe uses it (with its producible count).
+ */
+export async function getIngredientDashboard(outletId?: string): Promise<IngredientUsage[]> {
+  if (USE_MOCK_API) {
+    const outlet = outletId ?? "";
+    return mockDb.ingredients.map((ingredient) => {
+      const remaining = mockIngredientBalance(outlet, ingredient.id);
+      const movements = mockDb.ingredientMovements.filter(
+        (movement) => movement.ingredientId === ingredient.id
+      );
+      const consumed = movements
+        .filter(
+          (movement) =>
+            movement.quantity < 0 &&
+            ["consumption", "wastage", "expired"].includes(movement.type ?? "")
+        )
+        .reduce((sum, movement) => sum - movement.quantity, 0);
+      const received = movements
+        .filter((movement) => movement.quantity > 0 && movement.type === "purchase")
+        .reduce((sum, movement) => sum + movement.quantity, 0);
+
+      return {
+        ingredientId: ingredient.id,
+        name: ingredient.name,
+        sku: ingredient.sku,
+        unit: ingredient.unit,
+        remaining: Number(remaining.toFixed(4)),
+        consumed: Number(consumed.toFixed(4)),
+        received: Number(received.toFixed(4)),
+        reorderLevel: ingredient.reorderLevel,
+        lowStock: remaining <= ingredient.reorderLevel,
+        trackInventory: ingredient.trackInventory,
+        products: mockDb.recipeItems
+          .filter((item) => item.ingredientId === ingredient.id)
+          .map((item) => {
+            const product = mockDb.products.find((entry) => entry.id === item.productId);
+            const perUnit = item.quantity * (1 + (item.wastePercent ?? 0) / 100);
+            return {
+              productId: item.productId,
+              productName: product?.name ?? null,
+              productVariantId: item.productVariantId ?? null,
+              quantity: item.quantity,
+              unit: ingredient.unit,
+              quantityInIngredientUnit: Number(perUnit.toFixed(4)),
+              producible: perUnit > 0 ? Math.floor(remaining / perUnit) : null,
+            };
+          }),
+      };
+    });
+  }
+
+  const search = new URLSearchParams();
+  if (outletId) search.set("outlet_id", outletId);
+  const data = await apiRequest<any[]>(
+    `/ingredients/dashboard${search.size ? `?${search.toString()}` : ""}`
+  );
+  return (Array.isArray(data) ? data : []).map(normalizeUsage);
+}
+
+/**
+ * `GET /recipes/availability` — whole menu sellable counts in one call, used by
+ * the register to grey out items the outlet can no longer make.
+ */
+export async function getRecipeAvailability(outletId?: string): Promise<ProductAvailability[]> {
+  if (USE_MOCK_API) {
+    const outlet = outletId ?? "";
+    return mockDb.products
+      .filter((product) => product.active)
+      .filter((product) =>
+        mockDb.recipeItems.some((item) => item.productId === product.id)
+      )
+      .map((product) => {
+        let sellable: number | null = null;
+        let limiting: ProductAvailability["limiting"] = null;
+
+        for (const line of mockRecipeLines(product.id)) {
+          if (!line.ingredient?.trackInventory || line.effective <= 0) continue;
+          const available = mockIngredientBalance(outlet, line.ingredient.id);
+          const possible = Math.floor(available / line.effective);
+          if (sellable === null || possible < sellable) {
+            sellable = possible;
+            limiting = {
+              ingredientId: line.ingredient.id,
+              ingredientName: line.ingredient.name,
+              unit: line.ingredient.unit,
+              available,
+              requiredPerUnit: Number(line.effective.toFixed(4)),
+              possible,
+            };
+          }
+        }
+
+        return {
+          productId: product.id,
+          productName: product.name,
+          sellable,
+          unlimited: sellable === null,
+          status:
+            sellable === null
+              ? ("available" as const)
+              : sellable <= 0
+                ? ("out_of_stock" as const)
+                : sellable <= 5
+                  ? ("low_stock" as const)
+                  : ("available" as const),
+          limiting,
+        };
+      });
+  }
+
+  const search = new URLSearchParams();
+  if (outletId) search.set("outlet_id", outletId);
+  const data = await apiRequest<any[]>(
+    `/recipes/availability${search.size ? `?${search.toString()}` : ""}`
+  );
+  return (Array.isArray(data) ? data : []).map((raw) => ({
+    productId: String(raw.product_id),
+    productName: raw.product_name ?? "",
+    sellable: raw.sellable ?? null,
+    unlimited: Boolean(raw.unlimited),
+    status:
+      raw.status === "out_of_stock" || raw.status === "low_stock" ? raw.status : "available",
+    limiting: raw.limiting
+      ? {
+          ingredientId: String(raw.limiting.ingredient_id),
+          ingredientName: raw.limiting.ingredient_name ?? "",
+          unit: raw.limiting.unit ?? "",
+          available: Number(raw.limiting.available ?? 0),
+          requiredPerUnit: Number(raw.limiting.required_per_unit ?? 0),
+          possible: Number(raw.limiting.possible ?? 0),
+        }
+      : null,
+  }));
 }

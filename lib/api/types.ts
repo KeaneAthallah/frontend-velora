@@ -105,6 +105,54 @@ export type Ingredient = {
   lowStock: boolean;
 };
 
+/** One product's share of an ingredient, from the ingredients dashboard. */
+export type IngredientUsageProduct = {
+  productId: string;
+  productName: string | null;
+  productVariantId: string | null;
+  /** Quantity as written on the recipe line, in `unit`. */
+  quantity: number;
+  unit: string;
+  /** The same quantity converted into the ingredient's stocking unit. */
+  quantityInIngredientUnit: number;
+  /** Whole units still producible from the outlet balance. */
+  producible: number | null;
+};
+
+/** `GET /ingredients/dashboard` — stock, usage and where an ingredient goes. */
+export type IngredientUsage = {
+  ingredientId: string;
+  name: string;
+  sku?: string;
+  unit: string;
+  remaining: number;
+  consumed: number;
+  received: number;
+  reorderLevel: number;
+  lowStock: boolean;
+  trackInventory: boolean;
+  products: IngredientUsageProduct[];
+};
+
+export type AvailabilityLine = {
+  ingredientId: string;
+  ingredientName: string;
+  unit: string;
+  available: number;
+  requiredPerUnit: number;
+  possible: number;
+};
+
+/** `GET /recipes/availability` — units an outlet can still make per product. */
+export type ProductAvailability = {
+  productId: string;
+  productName: string;
+  sellable: number | null;
+  unlimited: boolean;
+  status: "available" | "low_stock" | "out_of_stock";
+  limiting: AvailabilityLine | null;
+};
+
 export type IngredientMovement = {
   id: string;
   ingredientId: string;
@@ -188,6 +236,18 @@ export type PaymentInput = {
 
 export type RefundStatus = "pending" | "approved" | "rejected" | "completed";
 
+/**
+ * One sale line a refund returns to stock. Empty for amount-only refunds.
+ */
+export type RefundItem = {
+  id: string;
+  saleItemId: string;
+  quantity: number;
+  reason?: string;
+  productName?: string;
+  sku?: string;
+};
+
 export type Refund = {
   id: string;
   saleId: string;
@@ -195,6 +255,7 @@ export type Refund = {
   amount: number;
   reason?: string;
   status: RefundStatus;
+  items?: RefundItem[];
   createdAt: string;
   approvedAt?: string;
   completedAt?: string;
@@ -376,6 +437,8 @@ export type Transaction = {
   customerId?: string;
   customerName?: string;
   items: {
+    /** Backend `sale_items.id`; required to refund this line. */
+    saleItemId?: string;
     productId?: string;
     name: string;
     sku: string;
@@ -1070,4 +1133,85 @@ export type StockTransfer = {
   createdAt: string;
   completedAt: string | null;
   items: StockTransferItem[];
+};
+/* -------------------------------------------------------------------------- */
+/* Reorder copilot                                                            */
+/* -------------------------------------------------------------------------- */
+
+export type ReorderMethod = "recipe-demand" | "photo-demand" | "none";
+
+export type ReorderWasteRisk = {
+  likelyWasteQuantity: number;
+  note: string;
+};
+
+export type ReorderParcel = {
+  parcelQuantity: number;
+  parcelCost: number;
+  supplierId: string;
+  supplierName?: string;
+  supplierLeadTimeDays: number | null;
+};
+
+export type ReorderPhotoPattern = {
+  patternId: string;
+  name: string;
+  consumptionRate: number;
+  photoShareEstimate: number;
+  suggestedParcels: ReorderParcel[];
+};
+
+export type ReorderConsumption = {
+  /** Units the recipes say should have been used over the lookback. */
+  theoretical: number;
+  /** Units of the products those recipes belong to that actually sold. */
+  soldUnits: number;
+  recipeDriven: boolean;
+};
+
+export type ReorderIngredientForecast = {
+  method: ReorderMethod;
+  dailyDemand: number;
+  leadTimeDemand: number;
+  targetStock: number | null;
+  currentStock: number;
+  reorderQuantity: number;
+  reorderQuantityUnit: string;
+  reorderReason: string;
+  predictedStockAtReorderDate: number;
+  daysOfStockRemaining: number | null;
+  wasteRisk: ReorderWasteRisk | null;
+  blindSpot: string | null;
+  shelfLifeNote: string | null;
+  leadTimeDays: number | null;
+};
+
+export type ReorderIngredient = {
+  id: string;
+  name: string;
+  sku?: string;
+  unit: string;
+  costPerUnit: number;
+  currentStock: number;
+  reorderLevel: number;
+  /** 0 when the ingredient has no shelf life on record. */
+  shelfLifeDays: number;
+  isTracked: boolean;
+  leadTimeDays: number;
+  photoPattern: ReorderPhotoPattern | null;
+  forecast: ReorderIngredientForecast;
+  consumption: ReorderConsumption;
+};
+
+export type ReorderForecast = {
+  forecastAt: string;
+  lookback: { from: string; until: string; days: number };
+  settings: {
+    defaultLeadDays: number;
+    minCoverageDays: number;
+    models: { demand: boolean; shelfLife: boolean; leadTime: boolean };
+  };
+  ingredients: ReorderIngredient[];
+  purchaseMoneyBudget: { amount: number; currency: string; note: string };
+  suggestedParcelsByProduct: Record<string, ReorderParcel[]>;
 };

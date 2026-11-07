@@ -504,10 +504,11 @@ function makeTransaction(at: Date, sequence: number): Transaction {
   const chosen = new Set<string>();
   while (chosen.size < itemCount) chosen.add(pick(weightedProducts));
 
-  const items = Array.from(chosen).map((productId) => {
+  const items = Array.from(chosen).map((productId, index) => {
     const product = mockProducts.find((item) => item.id === productId)!;
     const quantity = between(1, 3);
     return {
+      saleItemId: `si-${sequence}-${index}`,
       productId,
       name: product.name,
       sku: product.sku,

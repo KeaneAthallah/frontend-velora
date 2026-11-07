@@ -49,6 +49,7 @@ import { useOffline } from "@/lib/offline/provider";
 import { checkoutOrder, createOrder, getOrder, updateOrder } from "@/lib/api/orders";
 import { listCustomers } from "@/lib/api/customers";
 import { stockByOutlet } from "@/lib/api/inventory";
+import { getRecipeAvailability } from "@/lib/api/ingredients";
 import { listFloorPlan } from "@/lib/api/tables";
 import type {
   Customer,
@@ -314,6 +315,15 @@ export default function SalesPage() {
     staleTime: 30_000,
   });
 
+  // Recipe-based cap: how many units this outlet's ingredients can still make.
+  // The server refuses an oversell anyway; this keeps the cart honest first.
+  const availabilityQuery = useQuery({
+    queryKey: ["pos-availability", outletId],
+    queryFn: () => getRecipeAvailability(outletId ?? undefined),
+    enabled: has("sales.create") && Boolean(outletId),
+    staleTime: 30_000,
+  });
+
   const categoriesQuery = useQuery({
     queryKey: ["categories"],
     queryFn: listCategories,
@@ -427,6 +437,18 @@ export default function SalesPage() {
     () => new Map((stockQuery.data ?? []).map((row) => [row.productId, row.stock])),
     [stockQuery.data]
   );
+
+  const availabilityMap = React.useMemo(
+    () => new Map((availabilityQuery.data ?? []).map((row) => [row.productId, row])),
+    [availabilityQuery.data]
+  );
+
+  /** Units the outlet can still make, or null when no tracked ingredient limits it. */
+  const sellableFor = (productId: string): number | null => {
+    const row = availabilityMap.get(productId);
+    if (!row || row.unlimited || row.sellable === null) return null;
+    return row.sellable;
+  };
 
   const products = React.useMemo(() => productsQuery.data?.data ?? [], [productsQuery.data]);
 
@@ -771,6 +793,9 @@ export default function SalesPage() {
       queryClient.invalidateQueries({ queryKey: ["inventory"] });
       queryClient.invalidateQueries({ queryKey: ["pos-stock"] });
       queryClient.invalidateQueries({ queryKey: ["pos-products"] });
+      queryClient.invalidateQueries({ queryKey: ["pos-availability"] });
+      queryClient.invalidateQueries({ queryKey: ["recipe-availability"] });
+      queryClient.invalidateQueries({ queryKey: ["ingredient-usage"] });
       window.setTimeout(() => searchRef.current?.focus(), 100);
     },
     onError: (error) => {
@@ -868,6 +893,25 @@ export default function SalesPage() {
       const productQty = current
         .filter((line) => line.productId === product.id)
         .reduce((sum, line) => sum + line.quantity, 0);
+      const sellable = sellableFor(product.id);
+      if (sellable !== null) {
+        if (sellable <= 0) {
+          push({
+            title: "Out of ingredients",
+            description: `${product.name} cannot be made at ${outlet?.name ?? "this outlet"} right now.`,
+            variant: "warning",
+          });
+          return current;
+        }
+        if (productQty >= sellable) {
+          push({
+            title: "Ingredient limit reached",
+            description: `${product.name} can be made ${formatNumber(sellable)} more time${sellable === 1 ? "" : "s"} with the stock on hand.`,
+            variant: "warning",
+          });
+          return current;
+        }
+      }
       if (tracked && productQty >= stock) {
         push({
           title: "No more stock available",
@@ -925,6 +969,15 @@ export default function SalesPage() {
           push({
             title: "Stock limit reached",
             description: `${line.name} has ${formatNumber(line.stock)} ${line.unit} available.`,
+            variant: "warning",
+          });
+          return [line];
+        }
+        const sellable = sellableFor(line.productId);
+        if (sellable !== null && next > sellable) {
+          push({
+            title: "Ingredient limit reached",
+            description: `${line.name} can be made ${formatNumber(sellable)} time${sellable === 1 ? "" : "s"} with the stock on hand.`,
             variant: "warning",
           });
           return [line];
@@ -1125,14 +1178,24 @@ export default function SalesPage() {
                   .reduce((sum, line) => sum + line.quantity, 0);
                 const out = tracked && stock <= 0;
                 const maxed = tracked && stock > 0 && inCart >= stock;
+                const sellable = sellableFor(product.id);
+                const ingredientOut = sellable !== null && sellable <= 0;
+                const ingredientMaxed = sellable !== null && sellable > 0 && inCart >= sellable;
+                const blocked = out || maxed || unavailable || ingredientOut || ingredientMaxed;
                 return (
                   <button
                     key={product.id}
                     type="button"
                     className="product-tile"
                     onClick={() => chooseProduct(product)}
-                    disabled={out || maxed || unavailable}
-                    aria-label={`Add ${product.name} to order, ${formatCurrency(product.price, currency)}`}
+                    disabled={blocked}
+                    aria-label={
+                      ingredientOut || out
+                        ? `${product.name} is sold out`
+                        : ingredientMaxed || maxed
+                          ? `${product.name} is at its sellable limit`
+                          : `Add ${product.name} to order, ${formatCurrency(product.price, currency)}`
+                    }
                   >
                     {inCart && !out && !unavailable ? (
                       <span className="product-tile__qty" aria-hidden="true">
@@ -1140,7 +1203,7 @@ export default function SalesPage() {
                       </span>
                     ) : null}
                     <span
-                      className={`product-tile__mono sq ${out ? "sq--gray" : productMonogramTone(product)}`}
+                      className={`product-tile__mono sq ${out || ingredientOut ? "sq--gray" : productMonogramTone(product)}`}
                       aria-hidden="true"
                     >
                       {initials(product.name)}
@@ -1148,16 +1211,23 @@ export default function SalesPage() {
                     <div className="product-tile__body">
                       <div className="product-tile__name">{product.name}</div>
                       <div className="product-tile__meta">
-                        <span className="product-tile__price" data-off={out || unavailable ? "true" : undefined}>
+                        <span
+                          className="product-tile__price"
+                          data-off={out || unavailable || ingredientOut ? "true" : undefined}
+                        >
                           {formatCurrency(product.price, currency)}
                         </span>
                         {unavailable ? (
                           <span className="product-tile__stock" title={menuProduct?.unavailableReason}>
                             86
                           </span>
-                        ) : out ? (
+                        ) : out || ingredientOut ? (
                           <span className="product-tile__stock" data-low="true">
                             Sold out
+                          </span>
+                        ) : ingredientMaxed ? (
+                          <span className="product-tile__stock" data-low="true">
+                            Max {formatNumber(sellable ?? 0)}
                           </span>
                         ) : tracked && stock <= 10 ? (
                           <span className="product-tile__stock" data-low="true">

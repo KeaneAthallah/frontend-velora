@@ -1,6 +1,14 @@
 import { apiRequest, USE_MOCK_API } from "./client";
 import { mockDb, mockId } from "./mock-db";
-import type { Paginated, Payment, PaymentInput, PaymentMethod, Refund, RefundStatus } from "./types";
+import type {
+  Paginated,
+  Payment,
+  PaymentInput,
+  PaymentMethod,
+  Refund,
+  RefundItem,
+  RefundStatus,
+} from "./types";
 
 export type PaymentMethodInput = {
   name: string;
@@ -68,6 +76,14 @@ export function normalizeRefund(raw: any): Refund {
     amount: Number(raw.amount ?? 0),
     reason: raw.reason ?? undefined,
     status: (raw.status ?? "pending") as RefundStatus,
+    items: (raw.items ?? []).map((item: any) => ({
+      id: String(item.id),
+      saleItemId: String(item.sale_item_id ?? item.saleItemId ?? ""),
+      quantity: Number(item.quantity ?? 0),
+      reason: item.reason ?? undefined,
+      productName: item.sale_item?.product_name ?? item.saleItem?.productName ?? undefined,
+      sku: item.sale_item?.sku ?? item.saleItem?.sku ?? undefined,
+    })),
     createdAt: raw.created_at ?? raw.createdAt ?? new Date().toISOString(),
     approvedAt: raw.approved_at ?? raw.approvedAt ?? undefined,
     completedAt: raw.completed_at ?? raw.completedAt ?? undefined,
@@ -351,24 +367,61 @@ export async function listRefunds(params?: RefundListParams): Promise<Paginated<
   };
 }
 
-export async function requestRefund(
-  paymentId: string,
-  input: { amount: number; reason?: string }
-): Promise<Refund> {
+export type RefundRequest = {
+  /** Omit when `items` are given: the API prices the returned lines. */
+  amount?: number;
+  reason?: string;
+  items?: { saleItemId: string; quantity: number; reason?: string }[];
+};
+
+export async function requestRefund(paymentId: string, input: RefundRequest): Promise<Refund> {
   if (USE_MOCK_API) {
     const found = mockFindPayment(paymentId);
     if (!found) throw new Error("Payment not found");
+
+    const lines: RefundItem[] = (input.items ?? []).map((line) => {
+      const item = found.sale.items.find((entry) => entry.saleItemId === line.saleItemId);
+      if (!item) throw new Error("That item is not on this sale.");
+
+      // Pending refunds already reserve their quantities.
+      const returned = mockDb.refunds
+        .filter((refund) => ["pending", "approved", "completed"].includes(refund.status))
+        .flatMap((refund) => refund.items ?? [])
+        .filter((refundItem) => refundItem.saleItemId === line.saleItemId)
+        .reduce((sum, refundItem) => sum + refundItem.quantity, 0);
+
+      if (returned + line.quantity > item.quantity + 0.0001) {
+        throw new Error(`Refunding more of ${item.name} than was sold`);
+      }
+
+      return {
+        id: mockId("rfi"),
+        saleItemId: line.saleItemId,
+        quantity: line.quantity,
+        reason: line.reason,
+        productName: item.name,
+        sku: item.sku,
+      };
+    });
+
+    const priced = lines.reduce((sum, line) => {
+      const item = found.sale.items.find((entry) => entry.saleItemId === line.saleItemId)!;
+      return sum + (item.lineTotal * line.quantity) / item.quantity;
+    }, 0);
+    const amount = round4(input.amount ?? priced);
+
     const refundable = found.payment.amount - mockRefundedAmount(paymentId);
-    if (input.amount <= 0) throw new Error("Refund amount must be greater than zero");
-    if (input.amount > refundable + 0.0001) throw new Error("Refund exceeds the refundable amount");
+    if (amount <= 0) throw new Error("Enter a refund amount greater than zero.");
+    if (amount > refundable + 0.0001) throw new Error("Refund exceeds the refundable amount");
 
     const refund: Refund = {
       id: mockId("rf"),
       saleId: found.sale.id,
       paymentId,
-      amount: input.amount,
+      amount,
       reason: input.reason,
       status: "pending",
+      items: lines,
       createdAt: new Date().toISOString(),
       sale: {
         id: found.sale.id,
@@ -390,7 +443,17 @@ export async function requestRefund(
 
   const data = await apiRequest<any>(`/payments/${paymentId}/refund`, {
     method: "POST",
-    body: { amount: input.amount, reason: input.reason },
+    body: {
+      amount: input.amount,
+      reason: input.reason,
+      items: input.items?.length
+        ? input.items.map((line) => ({
+            sale_item_id: line.saleItemId,
+            quantity: line.quantity,
+            reason: line.reason,
+          }))
+        : undefined,
+    },
   });
   return normalizeRefund(data);
 }

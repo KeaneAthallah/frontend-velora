@@ -74,6 +74,7 @@ export default function TransactionsPage() {
   const [refundPayment, setRefundPayment] = React.useState<Payment | null>(null);
   const [refundAmount, setRefundAmount] = React.useState("");
   const [refundReason, setRefundReason] = React.useState("");
+  const [refundLines, setRefundLines] = React.useState<Record<string, string>>({});
   const [refundError, setRefundError] = React.useState<string | null>(null);
   const debounced = useDebouncedValue(search, 300);
 
@@ -126,6 +127,24 @@ export default function TransactionsPage() {
 
   const refunds = refundsQuery.data?.data ?? [];
 
+  // Quantities already promised back by pending/approved/completed refunds, so
+  // the dialog cannot return the same unit twice.
+  const returnedFor = (saleItemId: string) =>
+    refunds
+      .filter((refund) => ["pending", "approved", "completed"].includes(refund.status))
+      .flatMap((refund) => refund.items ?? [])
+      .filter((item) => item.saleItemId === saleItemId)
+      .reduce((sum, item) => sum + item.quantity, 0);
+
+  const saleItems = detail.data?.items ?? [];
+  const returnedLines = saleItems
+    .map((item) => ({ item, quantity: Number(refundLines[item.saleItemId ?? ""] ?? 0) }))
+    .filter((line) => Boolean(line.item.saleItemId) && line.quantity > 0);
+  const suggestedAmount = returnedLines.reduce(
+    (sum, line) => sum + (line.item.lineTotal * line.quantity) / line.item.quantity,
+    0
+  );
+
   const refreshAfterRefund = async () => {
     await queryClient.invalidateQueries({ queryKey: ["refunds", selectedId] });
     await queryClient.invalidateQueries({ queryKey: ["transaction", selectedId] });
@@ -138,12 +157,19 @@ export default function TransactionsPage() {
     mutationFn: async () => {
       if (!refundPayment) throw new Error("Choose a payment to refund.");
       const amount = Number(refundAmount);
-      if (!Number.isFinite(amount) || amount <= 0) {
-        throw new Error("Enter a refund amount greater than zero.");
+      const items = returnedLines.map((line) => ({
+        saleItemId: line.item.saleItemId!,
+        quantity: line.quantity,
+      }));
+
+      if (!items.length && (!Number.isFinite(amount) || amount <= 0)) {
+        throw new Error("Enter a refund amount or choose the items coming back.");
       }
+
       return requestRefund(refundPayment.id, {
-        amount,
+        amount: Number.isFinite(amount) && amount > 0 ? amount : undefined,
         reason: refundReason.trim() || undefined,
+        items: items.length ? items : undefined,
       });
     },
     onSuccess: async (refund) => {
@@ -155,6 +181,7 @@ export default function TransactionsPage() {
       setRefundPayment(null);
       setRefundAmount("");
       setRefundReason("");
+      setRefundLines({});
       setRefundError(null);
       await refreshAfterRefund();
     },
@@ -218,6 +245,23 @@ export default function TransactionsPage() {
       )
       .reduce((sum, refund) => sum + refund.amount, 0);
   const activeFilters = Boolean(debounced.trim()) || Boolean(status) || range !== "30d";
+
+  // "Return everything" fills the remaining quantity of each line and prices it.
+  const fillReturnedLines = () => {
+    const next: Record<string, string> = {};
+    let value = 0;
+
+    for (const item of saleItems) {
+      if (!item.saleItemId) continue;
+      const remaining = item.quantity - returnedFor(item.saleItemId);
+      if (remaining <= 0) continue;
+      next[item.saleItemId] = String(remaining);
+      value += item.lineTotal * (remaining / item.quantity);
+    }
+
+    setRefundLines(next);
+    if (value > 0) setRefundAmount(String(Math.round(value * 100) / 100));
+  };
 
   const columns: Column<Transaction>[] = [
     {
@@ -507,6 +551,7 @@ export default function TransactionsPage() {
               setRefundPayment(payment);
               setRefundAmount(String(Math.max(0, payment.amount - refundedFor(payment.id))));
               setRefundReason("");
+              setRefundLines({});
             }}
             onDecideRefund={(refund, action) => refundDecision.mutate({ refund, action })}
           />
@@ -579,7 +624,7 @@ export default function TransactionsPage() {
             <Button
               variant="primary"
               loading={refundMutation.isPending}
-              disabled={!Number(refundAmount)}
+              disabled={!Number(refundAmount) && returnedLines.length === 0}
               onClick={() => refundMutation.mutate()}
             >
               Request refund
@@ -588,17 +633,71 @@ export default function TransactionsPage() {
         }
       >
         <div className="stack" style={{ gap: 14 }}>
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 8 }}>
+              Items coming back
+            </div>
+            {saleItems.length === 0 ? (
+              <p className="hint">This receipt has no items to return.</p>
+            ) : (
+              <div className="stack-sm">
+                {saleItems.map((item) => {
+                  const id = item.saleItemId ?? "";
+                  const remaining = Math.max(0, item.quantity - returnedFor(id));
+
+                  return (
+                    <div key={id || item.name} className="row between" style={{ gap: 10 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 600 }}>{item.name}</div>
+                        <div className="hint">
+                          {formatNumber(remaining, "en-GB")} of{" "}
+                          {formatNumber(item.quantity, "en-GB")} still returnable
+                        </div>
+                      </div>
+                      <Input
+                        aria-label={`${item.name} quantity returned`}
+                        type="number"
+                        min="0"
+                        max={remaining}
+                        step="0.01"
+                        inputMode="decimal"
+                        style={{ width: 92 }}
+                        disabled={!id || remaining <= 0}
+                        value={refundLines[id] ?? ""}
+                        onChange={(event) =>
+                          setRefundLines((current) => ({ ...current, [id]: event.target.value }))
+                        }
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {saleItems.length ? (
+              <Button variant="quiet" size="sm" onClick={fillReturnedLines}>
+                Return everything outstanding
+              </Button>
+            ) : null}
+            <p className="hint" style={{ marginTop: 6 }}>
+              Quantities returned here put the recipe ingredients back on approval. Lines left
+              blank keep their stock deducted.
+            </p>
+          </div>
+
           <Field
             label="Amount"
             htmlFor="refund-amount"
-            required
             error={refundError}
             hint={
               refundPayment
                 ? `Refundable ${formatCurrency(
                     Math.max(0, refundPayment.amount - refundedFor(refundPayment.id)),
                     currency
-                  )}. Pending refunds reserve their amount.`
+                  )}. Pending refunds reserve their amount.${
+                    returnedLines.length
+                      ? ` The returned lines are worth ${formatCurrency(suggestedAmount, currency)}.`
+                      : " Leave the amount blank to refund the returned lines."
+                  }`
                 : undefined
             }
           >
@@ -830,6 +929,17 @@ function TransactionDetail({
                   {refund.reason ? (
                     <p className="hint" style={{ margin: 0 }}>
                       {refund.reason}
+                    </p>
+                  ) : null}
+                  {refund.items?.length ? (
+                    <p className="hint" style={{ margin: 0 }}>
+                      Back to stock:{" "}
+                      {refund.items
+                        .map(
+                          (item) =>
+                            `${formatNumber(item.quantity, "en-GB")}× ${item.productName ?? "item"}`
+                        )
+                        .join(", ")}
                     </p>
                   ) : null}
                   <div className="row between wrap" style={{ gap: 8 }}>
