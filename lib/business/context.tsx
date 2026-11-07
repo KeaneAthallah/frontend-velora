@@ -1,6 +1,7 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { listOutlets } from "@/lib/api/business";
 import { useAuth, usePermissions } from "@/lib/auth/auth-context";
 import type { Outlet } from "@/lib/api/types";
@@ -24,6 +25,7 @@ const Ctx = createContext<BusinessContextValue | null>(null);
 export function BusinessProvider({ children }: { children: React.ReactNode }) {
   const { session } = useAuth();
   const { has } = usePermissions();
+  const queryClient = useQueryClient();
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [outletId, setOutletIdState] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -96,12 +98,19 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
     };
   }, [session, has, refreshKey]);
 
-  const setOutletId = (id: string) => {
-    setOutletIdState(id);
-    if (typeof window !== "undefined") localStorage.setItem("outletId", id);
-  };
+  const setOutletId = useCallback(
+    (id: string) => {
+      setOutletIdState(id);
+      if (typeof window !== "undefined") localStorage.setItem("outletId", id);
+      // Most query keys are not outlet-scoped, and every request carries the
+      // outlet in `X-Outlet-Id`. Drop the cache so the new outlet never renders
+      // the previous outlet's cached rows.
+      queryClient.clear();
+    },
+    [queryClient],
+  );
 
-  const refreshOutlets = () => setRefreshKey((current) => current + 1);
+  const refreshOutlets = useCallback(() => setRefreshKey((current) => current + 1), []);
 
   const value = useMemo<BusinessContextValue>(() => {
     const outlet = outlets.find((entry) => entry.id === outletId) ?? session?.outlet ?? null;
@@ -116,7 +125,7 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
       outletsChecked,
       outletsLoaded,
     };
-  }, [outlets, outletId, businessId, session, loading, outletsChecked, outletsLoaded]);
+  }, [outlets, outletId, businessId, session, loading, outletsChecked, outletsLoaded, setOutletId, refreshOutlets]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
