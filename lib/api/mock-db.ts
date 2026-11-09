@@ -117,6 +117,7 @@ export const mockDb: {
     ingredientId: string;
     quantity: number;
     wastePercent: number;
+    optional?: boolean;
   }[];
   ingredientBalances: Record<string, number>;
   ingredientMovements: IngredientMovement[];

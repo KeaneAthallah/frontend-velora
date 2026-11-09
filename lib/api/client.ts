@@ -241,6 +241,57 @@ export async function apiRequest<T>(path: string, opts: RequestOptions = {}): Pr
   return parsed as T;
 }
 
+/**
+ * Download a file endpoint (CSV / SpreadsheetML / PDF exports).
+ *
+ * Same bearer and tenant headers as `apiRequest`, but the server answers with
+ * bytes instead of the JSON envelope, so the response comes back as a blob with
+ * the filename it suggested.
+ */
+export async function apiDownload(
+  path: string,
+  opts: Pick<RequestOptions, "signal"> = {}
+): Promise<{ blob: Blob; filename: string }> {
+  const url = `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
+  const headers: Record<string, string> = { Accept: "*/*" };
+  const token = getAccessToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (typeof window !== "undefined") {
+    const businessId = localStorage.getItem("businessId");
+    const outletId = localStorage.getItem("outletId");
+    if (businessId) headers["X-Business-Id"] = businessId;
+    if (outletId) headers["X-Outlet-Id"] = outletId;
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(url, { headers, credentials: "omit", signal: opts.signal });
+  } catch (error) {
+    throw new ApiException({
+      status: 0,
+      code: "NETWORK_ERROR",
+      message: "The server could not be reached",
+      details: error,
+    });
+  }
+
+  if (!res.ok) {
+    let parsed: unknown = null;
+    try {
+      parsed = await res.json();
+    } catch {
+      parsed = null;
+    }
+    if (res.status === 401) handleUnauthorized(path);
+    throw new ApiException(toApiError(res, parsed));
+  }
+
+  const disposition = res.headers.get("content-disposition") ?? "";
+  const match = /filename="?([^";]+)"?/i.exec(disposition);
+
+  return { blob: await res.blob(), filename: match?.[1] ?? "download" };
+}
+
 /** True when the request never reached the server, as opposed to a refusal. */
 export function isNetworkError(error: unknown): boolean {
   if (error instanceof ApiException) return error.status === 0;

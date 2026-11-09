@@ -24,6 +24,7 @@ export type IngredientInput = {
   unit?: string;
   costPerUnit?: number;
   reorderLevel?: number;
+  safetyStock?: number;
   trackInventory?: boolean;
   active?: boolean;
   openingQuantity?: number;
@@ -43,6 +44,8 @@ export type RecipeItemInput = {
   ingredientId: string;
   quantity: number;
   wastePercent?: number;
+  /** Only an optional line can be dropped by a "no X" modifier. */
+  optional?: boolean;
   notes?: string;
 };
 
@@ -54,11 +57,13 @@ function normalizeIngredient(raw: any): Ingredient {
     unit: raw.unit ?? "g",
     costPerUnit: Number(raw.cost_per_unit ?? raw.costPerUnit ?? 0),
     reorderLevel: Number(raw.reorder_level ?? raw.reorderLevel ?? 0),
+    safetyStock: Number(raw.safety_stock ?? raw.safetyStock ?? 0),
     trackInventory: raw.track_inventory ?? raw.trackInventory ?? true,
     active: raw.is_active ?? raw.active ?? true,
     quantity: Number(raw.quantity ?? 0),
     stockValue: Number(raw.stock_value ?? raw.stockValue ?? 0),
     lowStock: Boolean(raw.low_stock ?? raw.lowStock ?? false),
+    critical: Boolean(raw.critical ?? false),
   };
 }
 
@@ -97,6 +102,7 @@ function normalizeLine(raw: any): RecipeLine {
     unitCost: Number(raw.unit_cost ?? raw.unitCost ?? 0),
     quantity: Number(raw.quantity ?? 0),
     wastePercent: Number(raw.waste_percent ?? raw.wastePercent ?? 0),
+    optional: Boolean(raw.optional ?? false),
     effectiveQuantity: Number(raw.effective_quantity ?? raw.effectiveQuantity ?? raw.quantity ?? 0),
     lineCost: Number(raw.line_cost ?? raw.lineCost ?? 0),
     notes: raw.notes ?? undefined,
@@ -121,6 +127,7 @@ function ingredientBody(input: Partial<IngredientInput>) {
   if (input.unit !== undefined) body.unit = input.unit;
   if (input.costPerUnit !== undefined) body.cost_per_unit = input.costPerUnit;
   if (input.reorderLevel !== undefined) body.reorder_level = input.reorderLevel;
+  if (input.safetyStock !== undefined) body.safety_stock = input.safetyStock;
   if (input.trackInventory !== undefined) body.track_inventory = input.trackInventory;
   if (input.active !== undefined) body.is_active = input.active;
   return body;
@@ -133,6 +140,7 @@ function mockIngredient(raw: Ingredient, outletId?: string): Ingredient {
     quantity,
     stockValue: quantity * raw.costPerUnit,
     lowStock: raw.trackInventory && quantity <= raw.reorderLevel,
+    critical: raw.safetyStock > 0 && quantity <= raw.safetyStock,
   };
 }
 
@@ -146,6 +154,7 @@ function mockRecipeProduct(product: Product): RecipeProduct {
     unitCost: line.ingredient?.costPerUnit ?? 0,
     quantity: line.item.quantity,
     wastePercent: line.item.wastePercent ?? 0,
+    optional: Boolean(line.item.optional ?? false),
     effectiveQuantity: Number(line.effective.toFixed(4)),
     lineCost: Number(line.lineCost.toFixed(4)),
     notes: undefined,
@@ -202,11 +211,13 @@ export async function createIngredient(input: IngredientInput): Promise<Ingredie
       unit: input.unit ?? "g",
       costPerUnit: input.costPerUnit ?? 0,
       reorderLevel: input.reorderLevel ?? 0,
+      safetyStock: input.safetyStock ?? 0,
       trackInventory: input.trackInventory ?? true,
       active: input.active ?? true,
       quantity: 0,
       stockValue: 0,
       lowStock: false,
+      critical: false,
     };
     mockDb.ingredients = [...mockDb.ingredients, ingredient];
 
@@ -255,6 +266,7 @@ export async function updateIngredient(
       ...(input.unit !== undefined ? { unit: input.unit } : {}),
       ...(input.costPerUnit !== undefined ? { costPerUnit: input.costPerUnit } : {}),
       ...(input.reorderLevel !== undefined ? { reorderLevel: input.reorderLevel } : {}),
+      ...(input.safetyStock !== undefined ? { safetyStock: input.safetyStock } : {}),
       ...(input.trackInventory !== undefined ? { trackInventory: input.trackInventory } : {}),
       ...(input.active !== undefined ? { active: input.active } : {}),
     };
@@ -441,6 +453,7 @@ export async function setRecipe(
           ingredientId: item.ingredientId,
           quantity: item.quantity,
           wastePercent: item.wastePercent ?? 0,
+          optional: item.optional ?? false,
         })),
       ];
     }
@@ -456,6 +469,7 @@ export async function setRecipe(
         ingredient_id: Number(item.ingredientId),
         quantity: item.quantity,
         waste_percent: item.wastePercent ?? 0,
+        optional: item.optional ?? false,
         notes: item.notes,
       })),
     },
@@ -473,7 +487,9 @@ function normalizeUsage(raw: any): IngredientUsage {
     consumed: Number(raw.consumed ?? 0),
     received: Number(raw.received ?? 0),
     reorderLevel: Number(raw.reorder_level ?? 0),
+    safetyStock: Number(raw.safety_stock ?? 0),
     lowStock: Boolean(raw.low_stock),
+    critical: Boolean(raw.critical),
     trackInventory: raw.track_inventory !== false,
     products: (raw.products ?? []).map((product: any) => ({
       productId: String(product.product_id),
@@ -520,7 +536,9 @@ export async function getIngredientDashboard(outletId?: string): Promise<Ingredi
         consumed: Number(consumed.toFixed(4)),
         received: Number(received.toFixed(4)),
         reorderLevel: ingredient.reorderLevel,
+        safetyStock: ingredient.safetyStock,
         lowStock: remaining <= ingredient.reorderLevel,
+        critical: ingredient.safetyStock > 0 && remaining <= ingredient.safetyStock,
         trackInventory: ingredient.trackInventory,
         products: mockDb.recipeItems
           .filter((item) => item.ingredientId === ingredient.id)

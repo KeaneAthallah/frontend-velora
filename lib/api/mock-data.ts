@@ -191,18 +191,18 @@ export const mockProductDayparts: Record<string, string[]> = {};
 export const mockMenuAvailability: Record<string, { available: boolean; reason?: string }> = {};
 
 export const mockIngredients: Ingredient[] = [
-  { id: "ing1", name: "Espresso beans", sku: "BEAN-ESP", unit: "g", costPerUnit: 120, reorderLevel: 3000, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false },
-  { id: "ing2", name: "Fresh milk", sku: "MILK-FRESH", unit: "ml", costPerUnit: 25, reorderLevel: 5000, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false },
-  { id: "ing3", name: "Oat milk", sku: "MILK-OAT", unit: "ml", costPerUnit: 45, reorderLevel: 2000, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false },
-  { id: "ing4", name: "Vanilla syrup", sku: "SYR-VAN", unit: "ml", costPerUnit: 40, reorderLevel: 500, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false },
-  { id: "ing5", name: "Cup 12oz", sku: "CUP-12", unit: "pcs", costPerUnit: 1200, reorderLevel: 100, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false },
-  { id: "ing6", name: "Ice", sku: "ICE", unit: "g", costPerUnit: 2, reorderLevel: 0, trackInventory: false, active: true, quantity: 0, stockValue: 0, lowStock: false },
-  { id: "ing7", name: "Matcha powder", sku: "TEA-MAT", unit: "g", costPerUnit: 800, reorderLevel: 200, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false },
-  { id: "ing8", name: "Green tea bag", sku: "TEA-GRN", unit: "pcs", costPerUnit: 800, reorderLevel: 50, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false },
-  { id: "ing9", name: "Croissant", sku: "PST-CRO", unit: "pcs", costPerUnit: 9000, reorderLevel: 10, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false },
-  { id: "ing10", name: "Pain au chocolat", sku: "PST-PAC", unit: "pcs", costPerUnit: 10000, reorderLevel: 10, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false },
-  { id: "ing11", name: "Blueberry muffin", sku: "PST-MUF", unit: "pcs", costPerUnit: 7500, reorderLevel: 10, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false },
-  { id: "ing12", name: "House blend bag 250g", sku: "BEAN-HSE-250", unit: "pcs", costPerUnit: 57000, reorderLevel: 6, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false },
+  { id: "ing1", name: "Espresso beans", sku: "BEAN-ESP", unit: "g", costPerUnit: 120, reorderLevel: 3000, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false, safetyStock: 0, critical: false },
+  { id: "ing2", name: "Fresh milk", sku: "MILK-FRESH", unit: "ml", costPerUnit: 25, reorderLevel: 5000, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false, safetyStock: 0, critical: false },
+  { id: "ing3", name: "Oat milk", sku: "MILK-OAT", unit: "ml", costPerUnit: 45, reorderLevel: 2000, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false, safetyStock: 0, critical: false },
+  { id: "ing4", name: "Vanilla syrup", sku: "SYR-VAN", unit: "ml", costPerUnit: 40, reorderLevel: 500, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false, safetyStock: 0, critical: false },
+  { id: "ing5", name: "Cup 12oz", sku: "CUP-12", unit: "pcs", costPerUnit: 1200, reorderLevel: 100, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false, safetyStock: 0, critical: false },
+  { id: "ing6", name: "Ice", sku: "ICE", unit: "g", costPerUnit: 2, reorderLevel: 0, trackInventory: false, active: true, quantity: 0, stockValue: 0, lowStock: false, safetyStock: 0, critical: false },
+  { id: "ing7", name: "Matcha powder", sku: "TEA-MAT", unit: "g", costPerUnit: 800, reorderLevel: 200, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false, safetyStock: 0, critical: false },
+  { id: "ing8", name: "Green tea bag", sku: "TEA-GRN", unit: "pcs", costPerUnit: 800, reorderLevel: 50, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false, safetyStock: 0, critical: false },
+  { id: "ing9", name: "Croissant", sku: "PST-CRO", unit: "pcs", costPerUnit: 9000, reorderLevel: 10, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false, safetyStock: 0, critical: false },
+  { id: "ing10", name: "Pain au chocolat", sku: "PST-PAC", unit: "pcs", costPerUnit: 10000, reorderLevel: 10, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false, safetyStock: 0, critical: false },
+  { id: "ing11", name: "Blueberry muffin", sku: "PST-MUF", unit: "pcs", costPerUnit: 7500, reorderLevel: 10, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false, safetyStock: 0, critical: false },
+  { id: "ing12", name: "House blend bag 250g", sku: "BEAN-HSE-250", unit: "pcs", costPerUnit: 57000, reorderLevel: 6, trackInventory: true, active: true, quantity: 0, stockValue: 0, lowStock: false, safetyStock: 0, critical: false },
 ];
 
 export type MockRecipeItem = {

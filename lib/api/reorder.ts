@@ -1,7 +1,8 @@
 import { apiRequest, USE_MOCK_API } from "./client";
-import { mockDb, mockIngredientBalance } from "./mock-db";
+import { mockDb, mockId, mockIngredientBalance } from "./mock-db";
 import type {
   ReorderConsumption,
+  ReorderDraft,
   ReorderForecast,
   ReorderIngredient,
   ReorderIngredientForecast,
@@ -152,8 +153,7 @@ function forecastQuery(params: ReorderForecastParams) {
 }
 
 /**
- * Read-only demand forecast. It never writes: drafting a purchase order is a
- * separate, still-gated endpoint because PO lines are product-based.
+ * Read-only demand forecast. Drafting a purchase order is `draftPurchaseOrder`.
  */
 export async function getReorderForecast(
   params: ReorderForecastParams = {}
@@ -195,9 +195,70 @@ export async function getReorderForecast(
   };
 }
 
+/**
+ * Turn the forecast into a draft purchase order. The lines are ingredients, so
+ * the order is received into ingredient stock, not product inventory.
+ */
+export async function draftPurchaseOrder(
+  params: { supplierId?: string; budget?: number } = {}
+): Promise<ReorderDraft> {
+  if (USE_MOCK_API) return mockReorderDraft();
+
+  const raw = await apiRequest<any>("/reorder/suggest", {
+    method: "POST",
+    body: {
+      supplierId: params.supplierId ? Number(params.supplierId) : undefined,
+      budget: params.budget,
+    },
+  });
+
+  const order = raw?.purchaseOrder ?? {};
+  const lines = Array.isArray(order.items) ? order.items : [];
+
+  return {
+    purchaseOrder: {
+      id: String(order.id ?? ""),
+      number: order.number ?? "",
+      status: order.status ?? "draft",
+      total: number(order.total),
+      itemCount: lines.length,
+      items: lines.map((line: any) => ({
+        id: String(line.id ?? ""),
+        ingredientId: line.ingredientId != null ? String(line.ingredientId) : "",
+        name: line.ingredientName ?? line.productName ?? "",
+        quantity: number(line.quantity),
+        unit: line.unit ?? null,
+        total: number(line.estimatedTotal),
+      })),
+    },
+  };
+}
+
 /* -------------------------------------------------------------------------- */
 /* Mock                                                                       */
 /* -------------------------------------------------------------------------- */
+
+function mockReorderDraft(): ReorderDraft {
+  return {
+    purchaseOrder: {
+      id: mockId("po"),
+      number: "PO-DEMO01",
+      status: "draft",
+      total: 90000,
+      itemCount: 1,
+      items: [
+        {
+          id: mockId("poi"),
+          ingredientId: mockDb.ingredients[0]?.id ?? "ing-1",
+          name: mockDb.ingredients[0]?.name ?? "Espresso Beans",
+          quantity: 1000,
+          unit: "g",
+          total: 90000,
+        },
+      ],
+    },
+  };
+}
 
 function mockReorderForecast(params: ReorderForecastParams = {}): ReorderForecast {
   const until = params.until ? new Date(params.until) : new Date();

@@ -53,7 +53,8 @@ import {
   type DaypartInput,
   type ModifierOptionInput,
 } from "@/lib/api/menu";
-import type { Daypart, MenuProduct, ModifierGroup, ModifierOption } from "@/lib/api/types";
+import { listIngredients } from "@/lib/api/ingredients";
+import type { Daypart, Ingredient, MenuProduct, ModifierGroup, ModifierOption } from "@/lib/api/types";
 import { formatCurrency, formatNumber } from "@/lib/formatting/currency";
 import { useAuth, usePermissions } from "@/lib/auth/auth-context";
 import { useBusiness } from "@/lib/business/context";
@@ -107,6 +108,14 @@ export default function MenuPage() {
     queryKey: ["dayparts"],
     queryFn: listDayparts,
     enabled: has("menu.view"),
+    staleTime: 60_000,
+  });
+
+  // Only needed to name the ingredient an option removes.
+  const ingredientsQuery = useQuery({
+    queryKey: ["ingredients", "for-modifiers"],
+    queryFn: () => listIngredients({ active: true }),
+    enabled: canManage,
     staleTime: 60_000,
   });
 
@@ -371,6 +380,13 @@ export default function MenuPage() {
                                 ? "No charge"
                                 : `+${formatCurrency(option.priceDelta, currency)}`}
                               {option.productId ? " · linked product" : ""}
+                              {option.removesIngredientId
+                                ? ` · removes ${
+                                    (ingredientsQuery.data ?? []).find(
+                                      (entry) => entry.id === option.removesIngredientId
+                                    )?.name ?? "ingredient"
+                                  }`
+                                : ""}
                             </div>
                           </div>
                           {canManage ? (
@@ -545,6 +561,7 @@ export default function MenuPage() {
       <OptionFormDialog
         state={optionForm}
         currency={currency}
+        ingredients={ingredientsQuery.data ?? []}
         pending={action.isPending}
         onClose={() => setOptionForm(null)}
         onSubmit={(input) => {
@@ -738,12 +755,14 @@ function GroupFormDialog({
 function OptionFormDialog({
   state,
   currency,
+  ingredients,
   pending,
   onClose,
   onSubmit,
 }: {
   state: { group: ModifierGroup; option?: ModifierOption } | null;
   currency: string;
+  ingredients: Ingredient[];
   pending: boolean;
   onClose: () => void;
   onSubmit: (input: ModifierOptionInput) => void;
@@ -752,12 +771,14 @@ function OptionFormDialog({
   const [name, setName] = React.useState("");
   const [priceDelta, setPriceDelta] = React.useState("0");
   const [isDefault, setIsDefault] = React.useState(false);
+  const [removesIngredientId, setRemovesIngredientId] = React.useState("");
 
   React.useEffect(() => {
     if (!state) return;
     setName(option?.name ?? "");
     setPriceDelta(String(option?.priceDelta ?? 0));
     setIsDefault(option?.isDefault ?? false);
+    setRemovesIngredientId(option?.removesIngredientId ?? "");
   }, [state, option]);
 
   return (
@@ -781,6 +802,7 @@ function OptionFormDialog({
                 name: name.trim(),
                 priceDelta: Number(priceDelta) || 0,
                 isDefault,
+                removesIngredientId: removesIngredientId || null,
               })
             }
           >
@@ -807,6 +829,22 @@ function OptionFormDialog({
             value={priceDelta}
             onChange={(event) => setPriceDelta(event.target.value)}
           />
+        </Field>
+        <Field
+          label="Removes an ingredient"
+          hint="A “no milk” option points at the milk line; the recipe line has to be marked optional, or nothing is skipped."
+        >
+          <Select
+            value={removesIngredientId}
+            onChange={(event) => setRemovesIngredientId(event.target.value)}
+          >
+            <option value="">Does not remove anything</option>
+            {ingredients.map((ingredient) => (
+              <option key={ingredient.id} value={ingredient.id}>
+                {ingredient.name} ({ingredient.unit})
+              </option>
+            ))}
+          </Select>
         </Field>
         <Checkbox
           label="Pre-select this option"

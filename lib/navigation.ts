@@ -1,6 +1,10 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  Banknote,
   BarChart3,
+  BookOpen,
   Boxes,
   Building2,
   FileText,
@@ -16,8 +20,11 @@ import {
   CreditCard,
   Flame,
   FlaskConical,
+  HandCoins,
+  Landmark,
   LayoutDashboard,
   LayoutGrid,
+  ListTree,
   Package,
   PackageSearch,
   Receipt,
@@ -202,6 +209,60 @@ export const navGroups: NavGroup[] = [
     ],
   },
   {
+    label: "Finance",
+    items: [
+      {
+        label: "Finance",
+        href: "/finance",
+        icon: Landmark,
+        permissions: ["financial_reports.view", "accounts.view", "journal.view", "ar.view", "ap.view"],
+        description: "Aging, trial balance, and journal",
+      },
+      {
+        label: "Chart of accounts",
+        href: "/finance/accounts",
+        icon: ListTree,
+        permission: "accounts.view",
+        description: "Account codes and opening balances",
+      },
+      {
+        label: "Journal",
+        href: "/finance/journal",
+        icon: BookOpen,
+        permission: "journal.view",
+        description: "Double-entry postings and reversals",
+      },
+      {
+        label: "Receivables",
+        href: "/finance/receivables",
+        icon: ArrowDownLeft,
+        permission: "ar.view",
+        description: "Customer invoices and payments",
+      },
+      {
+        label: "Payables",
+        href: "/finance/payables",
+        icon: ArrowUpRight,
+        permission: "ap.view",
+        description: "Supplier invoices and aging",
+      },
+      {
+        label: "Payroll",
+        href: "/payroll",
+        icon: Banknote,
+        permission: "payroll.view",
+        description: "Monthly runs, approvals, and payslips",
+      },
+      {
+        label: "Salary structures",
+        href: "/payroll/structures",
+        icon: HandCoins,
+        permission: "payroll.view",
+        description: "Base pay, allowances, and deductions",
+      },
+    ],
+  },
+  {
     label: "People & insight",
     items: [
       {
@@ -316,7 +377,12 @@ export function filterNavGroups(has: (permission: string) => boolean, isPlatform
 export function findNavItem(pathname: string): NavItem | null {
   const all = navGroups.flatMap((group) => group.items);
   if (pathname === "/") return all.find((item) => item.href === "/") ?? null;
-  return all.find((item) => item.href !== "/" && pathname.startsWith(item.href)) ?? null;
+  // Longest matching href wins, so /finance/accounts is the accounts page and
+  // not the /finance overview it sits under.
+  const matches = all
+    .filter((item) => item.href !== "/" && (pathname === item.href || pathname.startsWith(`${item.href}/`)))
+    .sort((a, b) => b.href.length - a.href.length);
+  return matches[0] ?? null;
 }
 
 export function navTrail(pathname: string): { label: string; href?: string }[] {
@@ -351,6 +417,11 @@ export function defaultRoute(has: (permission: string) => boolean) {
   if (has("inventory.view")) return "/inventory";
   if (has("ingredients.view")) return "/recipes";
   if (has("purchasing.view")) return "/purchasing";
+  if (has("accounts.view")) return "/finance/accounts";
+  if (has("journal.view")) return "/finance/journal";
+  if (has("ar.view")) return "/finance/receivables";
+  if (has("ap.view")) return "/finance/payables";
+  if (has("payroll.view")) return "/payroll";
   if (has("customers.view")) return "/customers";
   if (has("employees.view")) return "/employees";
   return "/settings";

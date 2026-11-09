@@ -25,8 +25,19 @@ export function Sidebar({
   const { outlet } = useBusiness();
   const groups = React.useMemo(() => filterNavGroups(has, session?.isPlatformAdmin), [has, session?.isPlatformAdmin]);
 
-  const isActive = (href: string) =>
-    href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
+  // Highlight only the longest matching entry, so /finance/receivables does not
+  // also light up the /finance overview item.
+  const activeHref = React.useMemo(() => {
+    const matches = groups
+      .flatMap((group) => group.items)
+      .filter((item) =>
+        item.href === "/" ? pathname === "/" : pathname === item.href || pathname.startsWith(`${item.href}/`)
+      )
+      .sort((a, b) => b.href.length - a.href.length);
+    return matches[0]?.href ?? null;
+  }, [groups, pathname]);
+
+  const isActive = (href: string) => href === activeHref;
 
   const initials = (session?.user.name ?? "User")
     .split(/\s+/)

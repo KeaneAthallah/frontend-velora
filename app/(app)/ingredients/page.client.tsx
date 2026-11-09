@@ -103,11 +103,15 @@ export default function IngredientsPage() {
           <div className="row row-tight">
             <span style={{ fontWeight: 600 }}>{row.name}</span>
             {!row.trackInventory ? <Badge tone="neutral">Untracked</Badge> : null}
-            {row.trackInventory && row.lowStock ? <Badge tone="danger">Low</Badge> : null}
+            {row.trackInventory && row.critical ? <Badge tone="danger">Critical</Badge> : null}
+            {row.trackInventory && !row.critical && row.lowStock ? (
+              <Badge tone="warning">Low</Badge>
+            ) : null}
           </div>
           <div className="hint">
             {row.sku ? `${row.sku} · ` : ""}
             reorder at {quantity(row.reorderLevel)} {row.unit}
+            {row.safetyStock > 0 ? ` · safety at ${quantity(row.safetyStock)} ${row.unit}` : ""}
           </div>
         </div>
       ),

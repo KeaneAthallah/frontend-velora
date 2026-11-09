@@ -15,6 +15,8 @@ export type ModifierOptionInput = {
   isActive?: boolean;
   productId?: string;
   productVariantId?: string;
+  /** Ingredient the option takes out of the recipe; null clears it. */
+  removesIngredientId?: string | null;
 };
 
 export type ModifierGroupInput = {
@@ -50,6 +52,11 @@ function normalizeOption(option: any): ModifierOption {
     unavailableReason: option.unavailable_reason ?? option.unavailableReason ?? undefined,
     productId: option.product_id ? String(option.product_id) : undefined,
     productVariantId: option.product_variant_id ? String(option.product_variant_id) : undefined,
+    removesIngredientId: option.removes_ingredient_id
+      ? String(option.removes_ingredient_id)
+      : option.removesIngredientId
+        ? String(option.removesIngredientId)
+        : undefined,
   };
 }
 
@@ -98,6 +105,7 @@ function optionBody(input: ModifierOptionInput) {
     is_active: input.isActive ?? true,
     product_id: input.productId ? Number(input.productId) : null,
     product_variant_id: input.productVariantId ? Number(input.productVariantId) : null,
+    removes_ingredient_id: input.removesIngredientId ? Number(input.removesIngredientId) : null,
   };
 }
 
@@ -309,6 +317,7 @@ export async function createModifierOption(groupId: string, input: ModifierOptio
       available: true,
       productId: input.productId,
       productVariantId: input.productVariantId,
+      removesIngredientId: input.removesIngredientId ?? undefined,
     };
     if (option.isDefault && group.selectionType === "single") {
       group.options = group.options.map((item) => ({ ...item, isDefault: false }));
@@ -331,7 +340,11 @@ export async function updateModifierOption(id: string, input: Partial<ModifierOp
       if (input.isDefault && group.selectionType === "single") {
         group.options = group.options.map((option) => ({ ...option, isDefault: false }));
       }
-      group.options[index] = { ...group.options[index], ...input };
+      group.options[index] = {
+        ...group.options[index],
+        ...input,
+        removesIngredientId: input.removesIngredientId ?? undefined,
+      };
       return { ...group.options[index] };
     }
     throw new Error("Modifier option not found");
@@ -344,6 +357,11 @@ export async function updateModifierOption(id: string, input: Partial<ModifierOp
   if (input.productId !== undefined) body.product_id = input.productId ? Number(input.productId) : null;
   if (input.productVariantId !== undefined) {
     body.product_variant_id = input.productVariantId ? Number(input.productVariantId) : null;
+  }
+  if (input.removesIngredientId !== undefined) {
+    body.removes_ingredient_id = input.removesIngredientId
+      ? Number(input.removesIngredientId)
+      : null;
   }
   const data = await apiRequest<any>(`/modifier-options/${id}`, { method: "PUT", body });
   return normalizeOption(data);

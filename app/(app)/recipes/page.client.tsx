@@ -515,6 +515,7 @@ function RecipeDialog({
         ingredientId: line.ingredientId,
         quantity: line.quantity,
         wastePercent: line.wastePercent,
+        optional: line.optional,
       }))
     );
   }, [product]);
@@ -527,6 +528,7 @@ function RecipeDialog({
         ingredientId: line.ingredientId,
         quantity: line.quantity,
         wastePercent: line.wastePercent,
+        optional: line.optional,
       }))
     );
   };
@@ -554,7 +556,7 @@ function RecipeDialog({
     setLines((current) =>
       current.some((line) => line.ingredientId === addIngredientId)
         ? current
-        : [...current, { ingredientId: addIngredientId, quantity: 1, wastePercent: 0 }]
+        : [...current, { ingredientId: addIngredientId, quantity: 1, wastePercent: 0, optional: false }]
     );
     setAddIngredientId("");
   };
@@ -564,7 +566,7 @@ function RecipeDialog({
       open={Boolean(product)}
       onClose={onClose}
       title={product ? `Recipe · ${product.name}` : "Recipe"}
-      description="Quantities are for one unit sold. Waste is added on top of the quantity."
+      description="Quantities are for one unit sold. Waste is added on top of the quantity. Optional lines are skipped when a selected modifier removes that ingredient."
       width={560}
       footer={
         <>
@@ -671,6 +673,17 @@ function RecipeDialog({
                       style={{ width: 82 }}
                     />
                   </Field>
+                  <Field label="Optional">
+                    <Checkbox
+                      label=""
+                      checked={Boolean(line.optional)}
+                      disabled={!canManage}
+                      aria-label={`Let a modifier remove ${ingredient?.name ?? "this ingredient"}`}
+                      onChange={(event) =>
+                        updateLine(line.ingredientId, { optional: event.target.checked })
+                      }
+                    />
+                  </Field>
                   {canManage ? (
                     <button
                       type="button"
@@ -751,6 +764,7 @@ function IngredientDialog({
   const [unit, setUnit] = React.useState("g");
   const [costPerUnit, setCostPerUnit] = React.useState("0");
   const [reorderLevel, setReorderLevel] = React.useState("0");
+  const [safetyStock, setSafetyStock] = React.useState("0");
   const [trackInventory, setTrackInventory] = React.useState(true);
   const [openingQuantity, setOpeningQuantity] = React.useState("0");
 
@@ -761,6 +775,7 @@ function IngredientDialog({
     setUnit(ingredient?.unit ?? "g");
     setCostPerUnit(String(ingredient?.costPerUnit ?? 0));
     setReorderLevel(String(ingredient?.reorderLevel ?? 0));
+    setSafetyStock(String(ingredient?.safetyStock ?? 0));
     setTrackInventory(ingredient?.trackInventory ?? true);
     setOpeningQuantity("0");
   }, [state, ingredient]);
@@ -788,6 +803,7 @@ function IngredientDialog({
                 unit: unit.trim() || "g",
                 costPerUnit: Number(costPerUnit) || 0,
                 reorderLevel: Number(reorderLevel) || 0,
+                safetyStock: Number(safetyStock) || 0,
                 trackInventory,
                 ...(ingredient ? {} : { openingQuantity: Number(openingQuantity) || 0, outletId: outletId ?? undefined }),
               })
@@ -834,6 +850,16 @@ function IngredientDialog({
               inputMode="decimal"
               value={reorderLevel}
               onChange={(event) => setReorderLevel(event.target.value)}
+            />
+          </Field>
+          <Field label="Safety stock" hint="Critical floor; 0 disables">
+            <Input
+              type="number"
+              min={0}
+              step="any"
+              inputMode="decimal"
+              value={safetyStock}
+              onChange={(event) => setSafetyStock(event.target.value)}
             />
           </Field>
         </div>

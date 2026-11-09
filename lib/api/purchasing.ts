@@ -112,8 +112,11 @@ const poStatuses: Record<string, PurchaseOrder["status"]> = {
 function mapPurchaseOrder(order: any): PurchaseOrder {
   const items = (order.items ?? []).map((item: any) => ({
     id: String(item.id),
-    productId: String(item.product_id),
-    productName: item.product?.name ?? item.product_name ?? "",
+    // A copilot line buys an ingredient and may have no product at all.
+    productId: item.product_id != null ? String(item.product_id) : "",
+    productName: item.product?.name ?? item.ingredient?.name ?? item.product_name ?? "",
+    ingredientId: item.ingredient_id != null ? String(item.ingredient_id) : undefined,
+    unit: item.unit ?? undefined,
     quantity: Number(item.quantity ?? 0),
     receivedQuantity: Number(item.received_quantity ?? 0),
     cost: Number(item.unit_cost ?? 0),

@@ -53,6 +53,8 @@ export type ModifierOption = {
   unavailableReason?: string;
   productId?: string;
   productVariantId?: string;
+  /** Ingredient this option takes out of the recipe ("no milk" → milk). */
+  removesIngredientId?: string;
 };
 
 export type ModifierGroup = {
@@ -98,11 +100,14 @@ export type Ingredient = {
   unit: string;
   costPerUnit: number;
   reorderLevel: number;
+  /** Hard floor below the reorder level; stock here is critical. */
+  safetyStock: number;
   trackInventory: boolean;
   active: boolean;
   quantity: number;
   stockValue: number;
   lowStock: boolean;
+  critical: boolean;
 };
 
 /** One product's share of an ingredient, from the ingredients dashboard. */
@@ -129,7 +134,9 @@ export type IngredientUsage = {
   consumed: number;
   received: number;
   reorderLevel: number;
+  safetyStock: number;
   lowStock: boolean;
+  critical: boolean;
   trackInventory: boolean;
   products: IngredientUsageProduct[];
 };
@@ -178,6 +185,8 @@ export type RecipeLine = {
   unitCost: number;
   quantity: number;
   wastePercent: number;
+  /** A selected modifier may leave this line out of the deduction. */
+  optional: boolean;
   effectiveQuantity: number;
   lineCost: number;
   notes?: string;
@@ -606,8 +615,12 @@ export type Supplier = {
 
 export type PurchaseOrderItem = {
   id?: string;
+  /** Empty for a reorder-copilot line whose ingredient has no catalogue product. */
   productId: string;
   productName: string;
+  /** Set when the line buys an ingredient; receiving restocks the ingredient. */
+  ingredientId?: string;
+  unit?: string;
   quantity: number;
   receivedQuantity?: number;
   cost: number;
@@ -1203,6 +1216,26 @@ export type ReorderIngredient = {
   photoPattern: ReorderPhotoPattern | null;
   forecast: ReorderIngredientForecast;
   consumption: ReorderConsumption;
+};
+
+export type ReorderDraftLine = {
+  id: string;
+  ingredientId: string;
+  name: string;
+  quantity: number;
+  unit: string | null;
+  total: number;
+};
+
+export type ReorderDraft = {
+  purchaseOrder: {
+    id: string;
+    number: string;
+    status: string;
+    total: number;
+    itemCount: number;
+    items: ReorderDraftLine[];
+  };
 };
 
 export type ReorderForecast = {

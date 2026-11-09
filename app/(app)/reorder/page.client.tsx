@@ -5,16 +5,16 @@ export const instant = false;
 
 import * as React from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { ClipboardList, Flame, PackageSearch, Search, X } from "lucide-react";
 import { PageHeader, Stat } from "@/components/ui/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
-import { Badge, Button, Checkbox, EmptyState, Input } from "@/components/ui/primitives";
+import { Alert, Badge, Button, Checkbox, EmptyState, Input } from "@/components/ui/primitives";
 import { DataTable, type Column } from "@/components/ui/table";
 import { Dialog } from "@/components/ui/dialog";
 import { AccessDenied, InlineError } from "@/components/ui/states";
-import { getReorderForecast } from "@/lib/api/reorder";
-import type { ReorderIngredient } from "@/lib/api/types";
+import { draftPurchaseOrder, getReorderForecast } from "@/lib/api/reorder";
+import type { ReorderDraft, ReorderIngredient } from "@/lib/api/types";
 import { useAuth, usePermissions } from "@/lib/auth/auth-context";
 import { useBusiness } from "@/lib/business/context";
 import { formatCurrency, formatNumber, formatShortDate } from "@/lib/formatting/currency";
@@ -65,6 +65,16 @@ export default function ReorderPage() {
     queryFn: () => getReorderForecast(),
     enabled: canManage,
     staleTime: 60_000,
+  });
+
+  const [draft, setDraft] = React.useState<ReorderDraft | null>(null);
+
+  const draftMutation = useMutation({
+    mutationFn: () => draftPurchaseOrder(),
+    onSuccess: (result) => {
+      setDraft(result);
+      forecastQuery.refetch();
+    },
   });
 
   if (!canManage) {
@@ -233,9 +243,18 @@ export default function ReorderPage() {
       <PageHeader
         eyebrow="Catalog & stock"
         title="Reorder copilot"
-        description="Demand from recipes and completed sales, projected against lead time and shelf life. Read-only — nothing is ordered from this page."
+        description="Demand from recipes and completed sales, projected against lead time and shelf life. Drafting writes a purchase order; nothing is sent to a supplier."
         actions={
           <>
+            <Button
+              size="sm"
+              loading={draftMutation.isPending}
+              disabled={toReorder.length === 0}
+              onClick={() => draftMutation.mutate()}
+            >
+              <PackageSearch aria-hidden="true" />
+              Draft purchase order
+            </Button>
             <Link href="/ingredients" className="btn btn--secondary btn--sm">
               Ingredients
             </Link>
@@ -292,6 +311,22 @@ export default function ReorderPage() {
               compact
             />
           </div>
+
+          {draft ? (
+            <Alert tone="success" title="Draft purchase order created">
+              {draft.purchaseOrder.number} · {formatNumber(draft.purchaseOrder.itemCount)}{" "}
+              {draft.purchaseOrder.itemCount === 1 ? "line" : "lines"} ·{" "}
+              {formatCurrency(draft.purchaseOrder.total, currency)}.{" "}
+              <Link href="/purchasing">Review and approve it in Purchasing</Link>.
+            </Alert>
+          ) : null}
+          {draftMutation.isError ? (
+            <Alert tone="danger" title="Could not draft a purchase order">
+              {draftMutation.error instanceof Error
+                ? draftMutation.error.message
+                : "Try again once the forecast has loaded."}
+            </Alert>
+          ) : null}
 
           <Card>
             <CardHeader
