@@ -4,7 +4,7 @@ export const instant = false;
 
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, LifeBuoy, Search, Send, Settings2 } from "lucide-react";
+import { RefreshCw, Search, Send, Settings2 } from "lucide-react";
 import { PageHeader, Stat } from "@/components/ui/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Badge, Button, Field, Input, Tabs, Textarea } from "@/components/ui/primitives";
@@ -12,6 +12,7 @@ import { DataTable, type Column } from "@/components/ui/table";
 import { AccessDenied, InlineError } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
 import {
+  getPlatformMonitoring,
   getPlatformOverview,
   getPlatformSettings,
   listPlatformTickets,
@@ -25,7 +26,7 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { useDebouncedValue } from "@/lib/use-debounced";
 import { formatCurrency, formatDateTime, formatNumber } from "@/lib/formatting/currency";
 
-type TabId = "overview" | "tenants" | "tickets" | "settings";
+type TabId = "overview" | "monitoring" | "tenants" | "tickets" | "settings";
 
 export default function PlatformAdminPage() {
   const { session } = useAuth();
@@ -41,6 +42,11 @@ export default function PlatformAdminPage() {
   const isAdmin = Boolean(session?.isPlatformAdmin);
 
   const overview = useQuery({ queryKey: ["platform", "overview"], queryFn: getPlatformOverview, enabled: isAdmin });
+  const monitoring = useQuery({
+    queryKey: ["platform", "monitoring"],
+    queryFn: getPlatformMonitoring,
+    enabled: isAdmin && tab === "monitoring",
+  });
   const tenants = useQuery({
     queryKey: ["platform", "tenants", debounced],
     queryFn: () => listPlatformTenants({ q: debounced.trim() || undefined }),
@@ -152,6 +158,7 @@ export default function PlatformAdminPage() {
       <Tabs
         items={[
           { id: "overview", label: "Overview" },
+          { id: "monitoring", label: "Monitoring" },
           { id: "tenants", label: "Tenants" },
           { id: "tickets", label: "Support", count: overview.data?.health.openTickets },
           { id: "settings", label: "Settings" },
@@ -188,6 +195,119 @@ export default function PlatformAdminPage() {
                         <div className="hint">{row.industry ?? "No industry"} · {row.plan ?? "No plan"}</div>
                       </div>
                       <Badge tone={row.subscriptionStatus === "active" ? "success" : "warning"}>{row.subscriptionStatus ?? "none"}</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardBody>
+          </Card>
+        </>
+      ) : null}
+
+      {tab === "monitoring" ? (
+        <>
+          {monitoring.isError ? (
+            <InlineError
+              title="Could not load monitoring"
+              error={monitoring.error}
+              onRetry={() => monitoring.refetch()}
+            />
+          ) : null}
+
+          <div className="stat-grid">
+            <Stat label="Businesses" value={formatNumber(monitoring.data?.counts.businesses ?? 0)} />
+            <Stat label="Users" value={formatNumber(monitoring.data?.counts.users ?? 0)} />
+            <Stat label="Outlets" value={formatNumber(monitoring.data?.counts.outlets ?? 0)} />
+            <Stat label="Sales" value={formatNumber(monitoring.data?.counts.sales ?? 0)} />
+            <Stat label="Documents" value={formatNumber(monitoring.data?.counts.documents ?? 0)} />
+            <Stat label="Webhook deliveries" value={formatNumber(monitoring.data?.counts.webhookDeliveries ?? 0)} />
+          </div>
+
+          <Card>
+            <CardHeader
+              title="Failed webhook deliveries"
+              description="The ten most recent outbound failures. Retry them from Integrations → Webhooks."
+              actions={
+                <Button size="sm" variant="quiet" loading={monitoring.isFetching} onClick={() => monitoring.refetch()}>
+                  <RefreshCw aria-hidden="true" /> Refresh
+                </Button>
+              }
+            />
+            <CardBody>
+              {(monitoring.data?.failedWebhookDeliveries ?? []).length === 0 ? (
+                <p className="hint">No failed deliveries.</p>
+              ) : (
+                <div className="stack-sm">
+                  {monitoring.data?.failedWebhookDeliveries.map((row) => (
+                    <div key={row.id} className="row between" style={{ gap: 12 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 600 }}>{row.event}</div>
+                        <div className="hint">{row.endpoint ?? "Unknown endpoint"} · {row.url ?? "—"}</div>
+                      </div>
+                      <div className="row" style={{ gap: 8 }}>
+                        <Badge tone="danger">{row.responseStatus ?? "error"}</Badge>
+                        <span className="hint">{row.attempts} attempt{row.attempts === 1 ? "" : "s"}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader title="Failed payment webhooks" description="Provider callbacks that did not apply." />
+            <CardBody>
+              {(monitoring.data?.failedPaymentWebhooks ?? []).length === 0 ? (
+                <p className="hint">No failed payment webhooks.</p>
+              ) : (
+                <div className="stack-sm">
+                  {monitoring.data?.failedPaymentWebhooks.map((row) => (
+                    <div key={row.id} className="row between" style={{ gap: 12 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 600 }}>{row.provider} · {row.eventId ?? row.id}</div>
+                        <div className="hint">{row.error ?? "No error message recorded"}</div>
+                      </div>
+                      {row.updatedAt ? <span className="hint">{formatDateTime(row.updatedAt)}</span> : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader title="Past-due subscriptions" description="Inside the grace period, waiting for payment." />
+            <CardBody>
+              {(monitoring.data?.pastDue ?? []).length === 0 ? (
+                <p className="hint">Nothing past due.</p>
+              ) : (
+                <div className="stack-sm">
+                  {monitoring.data?.pastDue.map((row, index) => (
+                    <div key={`${row.business}-${index}`} className="row between" style={{ gap: 12 }}>
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{row.business ?? "Unknown business"}</div>
+                        <div className="hint">{row.plan ?? "No plan"}</div>
+                      </div>
+                      {row.endsAt ? <span className="hint">ended {formatDateTime(row.endsAt)}</span> : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader title="Audit activity (24h)" description="Most frequent actions across every tenant." />
+            <CardBody>
+              {(monitoring.data?.auditActivity ?? []).length === 0 ? (
+                <p className="hint">No audited activity in the last day.</p>
+              ) : (
+                <div className="stack-sm">
+                  {monitoring.data?.auditActivity.map((row) => (
+                    <div key={row.action} className="row between" style={{ gap: 12 }}>
+                      <code style={{ fontSize: 12 }}>{row.action}</code>
+                      <span className="num">{formatNumber(row.total)}</span>
                     </div>
                   ))}
                 </div>

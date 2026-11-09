@@ -891,6 +891,7 @@ export type PlanApi = {
   prices: { monthly: number; yearly: number };
   limits: Record<string, number | null>;
   features: Record<string, unknown>;
+  metadata: Record<string, unknown>;
 };
 
 export type ComparisonFeature = { key: string; label: string; plans: Record<string, boolean> };
@@ -903,6 +904,7 @@ export type PricingPayload = {
   plans: PlanApi[];
   comparison: ComparisonGroup[];
   limits: LimitRow[];
+  providers: PaymentProvider[];
 };
 
 export type PaymentProvider = { name: string; label: string; sandbox: boolean };

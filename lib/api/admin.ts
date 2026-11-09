@@ -237,9 +237,9 @@ function mockBusinessDetail(businessId: string): AdminBusinessDetail {
 function mockAdminPlans() {
   return {
     plans: [
-      { id: "1", slug: "trial", name: "Free Trial", description: "", sortOrder: 0, isPublic: true, isActive: true, isTrial: true, trialDays: 30, currency: "IDR", prices: { monthly: 0, yearly: 0 }, limits: { businesses: 1, outlets: 2, users: 3, products: 100, customers: 100, transactions_per_month: 100, exports_per_month: 10 }, features: {} },
-      { id: "2", slug: "basic", name: "Basic", description: "", sortOrder: 1, isPublic: true, isActive: true, isTrial: false, trialDays: 0, currency: "IDR", prices: { monthly: 69000, yearly: 720000 }, limits: { businesses: 1, outlets: 1, users: 3, products: 500, customers: 1000, transactions_per_month: 2000, exports_per_month: 100 }, features: {} },
-      { id: "3", slug: "pro", name: "Pro", description: "", sortOrder: 2, isPublic: true, isActive: true, isTrial: false, trialDays: 0, currency: "IDR", prices: { monthly: 89000, yearly: 890000 }, limits: { businesses: 1, outlets: 10, users: 20, products: null, customers: null, transactions_per_month: null, exports_per_month: null }, features: {} },
+      { id: "1", slug: "trial", name: "Free Trial", description: "", sortOrder: 0, isPublic: true, isActive: true, isTrial: true, trialDays: 30, currency: "IDR", prices: { monthly: 0, yearly: 0 }, limits: { businesses: 1, outlets: 2, users: 3, products: 100, customers: 100, transactions_per_month: 100, exports_per_month: 10 }, features: {}, metadata: {} },
+      { id: "2", slug: "basic", name: "Basic", description: "", sortOrder: 1, isPublic: true, isActive: true, isTrial: false, trialDays: 0, currency: "IDR", prices: { monthly: 69000, yearly: 720000 }, limits: { businesses: 1, outlets: 1, users: 3, products: 500, customers: 1000, transactions_per_month: 2000, exports_per_month: 100 }, features: {}, metadata: {} },
+      { id: "3", slug: "pro", name: "Pro", description: "", sortOrder: 2, isPublic: true, isActive: true, isTrial: false, trialDays: 0, currency: "IDR", prices: { monthly: 89000, yearly: 890000 }, limits: { businesses: 1, outlets: 10, users: 20, products: null, customers: null, transactions_per_month: null, exports_per_month: null }, features: {}, metadata: {} },
     ],
     featureCatalog: [],
     usageMetrics: [],

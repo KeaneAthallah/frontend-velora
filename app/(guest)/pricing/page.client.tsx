@@ -6,9 +6,10 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Check, X } from "lucide-react";
 import { Segmented, Select } from "@/components/ui/primitives";
-import { getPricing, createCheckout } from "@/lib/api/subscriptions";
+import { getPricing, createCheckout, isCustomPriced } from "@/lib/api/subscriptions";
 import { useAuth } from "@/lib/auth/auth-context";
 import { formatCurrency } from "@/lib/formatting/currency";
+import type { PlanApi } from "@/lib/api/types";
 
 export const instant = false;
 
@@ -19,7 +20,9 @@ const INDUSTRIES = [
   { value: "distributor", label: "Distributor / Wholesale" },
 ];
 
-const PLANS_ORDER = ["trial", "basic", "pro", "enterprise"] as const;
+// The live catalogue also has `growth`; ordering here decides the card order
+// and the comparison-table columns.
+const PLANS_ORDER = ["trial", "basic", "growth", "pro", "enterprise"] as const;
 
 export default function PricingPage() {
   const { session } = useAuth();
@@ -35,6 +38,14 @@ export default function PricingPage() {
 
   const currentPlanSlug = session?.subscription?.plan?.slug ?? null;
 
+  const plans = PLANS_ORDER.map((slug) => data?.plans.find((plan) => plan.slug === slug)).filter(
+    (plan): plan is PlanApi => Boolean(plan)
+  );
+
+  // Prefer a real payment provider (Midtrans) over the manual bank-transfer
+  // fallback so "Subscribe" lands on a payment page, not an invoice.
+  const preferredProvider = data?.providers.find((provider) => provider.name !== "manual")?.name;
+
   const handleSubscribe = async (slug: string) => {
     if (!session) {
       router.push(`/login?next=/pricing`);
@@ -45,7 +56,11 @@ export default function PricingPage() {
       return;
     }
     try {
-      const result = await createCheckout({ plan: slug, billingPeriod: period });
+      const result = await createCheckout({
+        plan: slug,
+        billingPeriod: period,
+        provider: preferredProvider,
+      });
       if (result.checkout.redirectUrl) {
         window.location.assign(result.checkout.redirectUrl);
       } else {
@@ -85,13 +100,13 @@ export default function PricingPage() {
         <SkeletonGrid count={3} />
       ) : data ? (
         <section className="pr-plans" aria-label="Pricing plans">
-          {PLANS_ORDER.map((slug) => {
-            const plan = data.plans.find((p) => p.slug === slug);
-            if (!plan) return null;
+          {plans.map((plan) => {
+            const slug = plan.slug;
             const price = period === "yearly" ? plan.prices.yearly : plan.prices.monthly;
+            const custom = isCustomPriced(plan);
             const featured = slug === "pro";
             const isCurrent = currentPlanSlug === slug;
-            const savings = calcSavings(plan);
+            const savings = custom ? null : calcSavings(plan);
 
             return (
               <article key={slug} className={`pr-card${featured ? " pr-card--featured" : ""}`}>
@@ -102,6 +117,11 @@ export default function PricingPage() {
                   <h3>{plan.name}</h3>
                   {plan.isTrial ? (
                     <span className="pr-period">{data.trialDays}-day free trial</span>
+                  ) : custom ? (
+                    <span className="pr-period">
+                      <span className="pr-price">Custom</span>
+                      <span className="pr-suffix">pricing</span>
+                    </span>
                   ) : (
                     <span className="pr-period">
                       <span className="pr-price">{formatCurrency(price)}</span>
@@ -119,16 +139,20 @@ export default function PricingPage() {
                     ["Transactions/mo", plan.limits.transactions_per_month],
                     ["Outlets", plan.limits.outlets],
                     ["Users", plan.limits.users],
-                  ].filter(([, val]) => val != null && val !== undefined).map(([label, val]) => (
-                    <React.Fragment key={label}>
-                      <dt>{label}</dt>
-                      <dd>{new Intl.NumberFormat().format(Number(val))}</dd>
-                    </React.Fragment>
-                  ))}
+                  ]
+                    .filter(([, val]) => custom || (val != null && val !== undefined))
+                    .map(([label, val]) => (
+                      <React.Fragment key={label}>
+                        <dt>{label}</dt>
+                        <dd>{custom ? "Custom" : new Intl.NumberFormat().format(Number(val))}</dd>
+                      </React.Fragment>
+                    ))}
                 </dl>
 
                 <div className="pr-foot">
-                  {isCurrent ? (
+                  {custom ? (
+                    <Link href="/support" className="btn btn--secondary btn--block">Contact sales</Link>
+                  ) : isCurrent ? (
                     <button type="button" disabled className="btn btn--secondary btn--block">On {plan.name}</button>
                   ) : plan.isTrial ? (
                     <button type="button" onClick={() => handleSubscribe(slug)} className="btn btn--primary btn--block">Start free trial</button>
@@ -149,16 +173,22 @@ export default function PricingPage() {
           <p className="pr-compare__label">Feature comparison</p>
           <table className="pr-table">
             <tbody>
+              <tr className="group-sep">
+                <td />
+                {plans.map((plan) => (
+                  <td key={plan.slug} style={{ textAlign: "center" }}>{plan.name}</td>
+                ))}
+              </tr>
               {data.comparison.map((group) => (
                 <React.Fragment key={group.group}>
-                  <tr className="group-sep"><td colSpan={4}>{group.group}</td></tr>
+                  <tr className="group-sep"><td colSpan={plans.length + 1}>{group.group}</td></tr>
                   {group.features.map((feat) => (
                     <tr key={feat.key}>
                       <td>{feat.label || feat.key}</td>
-                      {PLANS_ORDER.map((slug) => {
-                        const enabled = feat.plans[slug] === true;
+                      {plans.map((plan) => {
+                        const enabled = feat.plans[plan.slug] === true;
                         return (
-                          <td key={slug} style={{ textAlign: "center" }}>
+                          <td key={plan.slug} style={{ textAlign: "center" }}>
                             {enabled ? <Check className="tbl-check" aria-hidden="true" /> : <X className="tbl-cross" aria-hidden="true" />}
                           </td>
                         );

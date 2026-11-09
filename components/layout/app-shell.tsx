@@ -45,7 +45,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     if (loading || !session) return;
     // Accounts without a business cannot load tenant data; finish setup first.
+    // A platform administrator is the exception: the console at /admin spans
+    // every tenant, so it must open without a workspace of their own.
     if (!session.business.id) {
+      if (session.isPlatformAdmin) {
+        if (pathname !== "/admin" && !pathname.startsWith("/admin/")) {
+          router.replace("/admin");
+        }
+        return;
+      }
       router.replace("/onboarding");
       return;
     }

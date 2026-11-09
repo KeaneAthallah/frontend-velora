@@ -17,12 +17,14 @@ import { useBusiness } from "@/lib/business/context";
 import {
   cancelSubscription,
   getSubscription,
+  isCustomPriced,
   listInvoices,
   listPayments,
   listPlans,
   resumeSubscription,
   syncPayment,
 } from "@/lib/api/subscriptions";
+import { CheckoutDialog } from "@/components/subscription/checkout-dialog";
 import { updateAdminPlan } from "@/lib/api/admin";
 import type { SubscriptionDetail, SubscriptionHistoryEntry, SubscriptionInvoice, SubscriptionPayment } from "@/lib/api/types";
 
@@ -45,15 +47,17 @@ export default function SubscriptionPage() {
   const queryClient = useQueryClient();
 
   const [billingPeriod, setBillingPeriod] = React.useState<"monthly" | "yearly">("monthly");
-  const [actionDialog, setActionDialog] = React.useState<{
-    type: "upgrade" | "downgrade" | "cancel" | "resume" | "renew";
-    plan?: string;
-    period?: "monthly" | "yearly";
-  } | null>(null);
+  const [actionDialog, setActionDialog] = React.useState<{ type: "cancel" | "resume" } | null>(null);
   const [planEditorOpen, setPlanEditorOpen] = React.useState(false);
   const [selectedAdminPlan, setSelectedAdminPlan] = React.useState<string>("basic");
   const [showHistory, setShowHistory] = React.useState(false);
   const [page, setPage] = React.useState(1);
+  // The pricing page sends a signed-in visitor here with `?subscribe=<slug>`
+  // when it cannot start a checkout itself, so open that plan's dialog.
+  const [checkoutTarget, setCheckoutTarget] = React.useState<{
+    mode: "switch" | "renew";
+    slug: string;
+  } | null>(null);
 
   // Fetch invoices and payments on mount (separate queries to avoid blocking the main view)
   const invoiceQuery = useQuery({
@@ -75,6 +79,12 @@ export default function SubscriptionPage() {
     queryFn: listPlans,
     staleTime: 5 * 60_000,
   });
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const slug = new URLSearchParams(window.location.search).get("subscribe");
+    if (slug) setCheckoutTarget({ mode: "switch", slug });
+  }, []);
 
   const handleCancel = async () => {
     try {
@@ -187,8 +197,9 @@ export default function SubscriptionPage() {
         </CardBody>
       </Card>
 
-      {/* Available plans */}
-      {plansQuery.data && !sub.plan?.isTrial && (
+      {/* Available plans — also while on trial, which is how a trial moves to
+          a paid plan. */}
+      {plansQuery.data && (
         <Card>
           <CardHeader
             title="Available plans"
@@ -219,12 +230,14 @@ export default function SubscriptionPage() {
                   </div>
                   {isCurrent ? (
                     <Badge tone="success">Current</Badge>
+                  ) : isCustomPriced(plan) ? (
+                    <Badge tone="info">Contact sales</Badge>
                   ) : isHigher ? (
-                    <Button size="sm" onClick={() => setActionDialog({ type: "upgrade", plan: plan.slug })}>
+                    <Button size="sm" onClick={() => setCheckoutTarget({ mode: "switch", slug: plan.slug })}>
                       Upgrade
                     </Button>
                   ) : (
-                    <Button size="sm" variant="secondary" onClick={() => setActionDialog({ type: "downgrade", plan: plan.slug })}>
+                    <Button size="sm" variant="secondary" onClick={() => setCheckoutTarget({ mode: "switch", slug: plan.slug })}>
                       Downgrade
                     </Button>
                   )}
@@ -286,7 +299,7 @@ export default function SubscriptionPage() {
                       variant="primary"
                       size="sm"
                       style={{ marginLeft: 12 }}
-                      onClick={() => setActionDialog({ type: "renew" })}
+                      onClick={() => setCheckoutTarget({ mode: "renew", slug: currentSlug })}
                     >
                       Pay now
                     </Button>
@@ -304,7 +317,7 @@ export default function SubscriptionPage() {
               {sub.status === "past_due" && (
                 <>
                   Complete your payment within the grace period.{" "}
-                  <Button variant="primary" size="sm" style={{ marginLeft: 8 }} onClick={() => setActionDialog({ type: "renew" })}>
+                  <Button variant="primary" size="sm" style={{ marginLeft: 8 }} onClick={() => setCheckoutTarget({ mode: "renew", slug: currentSlug })}>
                     Renew
                   </Button>
                 </>
@@ -328,7 +341,7 @@ export default function SubscriptionPage() {
               </Button>
             )}
             {!sub.isActive && (
-              <Button variant="primary" size="sm" onClick={() => setActionDialog({ type: "renew" })}>
+              <Button variant="primary" size="sm" onClick={() => setCheckoutTarget({ mode: "renew", slug: currentSlug })}>
                 Renew subscription
               </Button>
             )}
@@ -409,6 +422,28 @@ export default function SubscriptionPage() {
           />
         </CardBody>
       </Card>
+
+      {/* Plan change / renewal checkout */}
+      <CheckoutDialog
+        open={checkoutTarget !== null}
+        mode={checkoutTarget?.mode ?? "switch"}
+        plan={
+          checkoutTarget
+            ? plansQuery.data?.plans.find((plan) => plan.slug === checkoutTarget.slug) ?? null
+            : null
+        }
+        providers={plansQuery.data?.providers ?? []}
+        defaultBillingPeriod={
+          checkoutTarget?.mode === "renew" ? sub.subscription.billingPeriod : billingPeriod
+        }
+        onClose={() => setCheckoutTarget(null)}
+        onSettled={() => {
+          queryClient.invalidateQueries({ queryKey: ["subscription"] });
+          queryClient.invalidateQueries({ queryKey: ["subscription-invoices"] });
+          queryClient.invalidateQueries({ queryKey: ["subscription-payments"] });
+          queryClient.invalidateQueries({ queryKey: ["subscription-plans"] });
+        }}
+      />
 
       {/* Action dialog */}
       {actionDialog?.type === "cancel" && (

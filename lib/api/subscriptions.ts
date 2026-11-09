@@ -27,7 +27,18 @@ export function mapPlan(raw: Raw): PlanApi {
     prices: { monthly: num(raw.prices?.monthly), yearly: num(raw.prices?.yearly) },
     limits: raw.limits ?? {},
     features: raw.features ?? {},
+    // PHP serialises an empty associative array as `[]`.
+    metadata: raw.metadata && !Array.isArray(raw.metadata) ? raw.metadata : {},
   };
+}
+
+/**
+ * A plan that is sold by a human, not by checkout. The API rejects
+ * `POST /subscription/checkout` for these with `PLAN_NOT_SELF_SERVE`, so the UI
+ * must offer a contact action instead of a price and a Subscribe button.
+ */
+export function isCustomPriced(plan: Pick<PlanApi, "metadata" | "slug">): boolean {
+  return plan.slug === "enterprise" || plan.metadata?.pricing === "custom";
 }
 
 export function mapSubscriptionSummary(raw: Raw): SubscriptionSummary {
@@ -169,6 +180,7 @@ export async function getPricing(industry?: string): Promise<PricingPayload> {
     plans: (raw.plans ?? []).map(mapPlan),
     comparison: raw.comparison ?? [],
     limits: raw.limits ?? [],
+    providers: raw.providers ?? [],
   };
 }
 
@@ -309,24 +321,30 @@ function mockPricing(): PricingPayload {
   return {
     currency: "IDR",
     trialDays: 30,
-    plans: [
-      { id: "1", slug: "trial", name: "Free Trial", description: "", sortOrder: 0, isPublic: true, isActive: true, isTrial: true, trialDays: 30, currency: "IDR", prices: { monthly: 0, yearly: 0 }, limits: { businesses: 1, outlets: 1, users: 3, products: 100, customers: 100, transactions_per_month: 100, exports_per_month: 10 }, features: {} },
-      { id: "2", slug: "basic", name: "Basic", description: "For a single shop that needs the full counter and back office.", sortOrder: 1, isPublic: true, isActive: true, isTrial: false, trialDays: 0, currency: "IDR", prices: { monthly: 69000, yearly: 720000 }, limits: { businesses: 1, outlets: 1, users: 3, products: 500, customers: 1000, transactions_per_month: 2000, exports_per_month: 100 }, features: {} },
-      { id: "3", slug: "pro", name: "Pro", description: "For growing retailers with several outlets and deeper reporting.", sortOrder: 2, isPublic: true, isActive: true, isTrial: false, trialDays: 0, currency: "IDR", prices: { monthly: 89000, yearly: 890000 }, limits: { businesses: 1, outlets: 10, users: 20, products: null, customers: null, transactions_per_month: null, exports_per_month: null }, features: {} },
-    ],
+    plans: mockPlanList(),
     comparison: [],
     limits: [],
+    providers: [{ name: "manual", label: "Bank transfer", sandbox: false }],
   };
+}
+
+/** Mirrors the live plan catalogue in backend-velora/config/subscriptions.php. */
+function mockPlanList(): PlanApi[] {
+  const base = { isPublic: true, isActive: true, currency: "IDR", features: {}, metadata: {} };
+  return [
+    { ...base, id: "1", slug: "trial", name: "Free Trial", description: "Everything you need to try Velora for 30 days.", sortOrder: 0, isTrial: true, trialDays: 30, prices: { monthly: 0, yearly: 0 }, limits: { businesses: 1, outlets: 1, users: 3, products: 100, customers: 100, transactions_per_month: 100, exports_per_month: 10 } },
+    { ...base, id: "2", slug: "basic", name: "Starter", description: "For a single shop that needs the full counter and back office.", sortOrder: 1, isTrial: false, trialDays: 0, prices: { monthly: 99000, yearly: 990000 }, limits: { businesses: 1, outlets: 1, users: 3, products: 500, customers: 1000, transactions_per_month: 2000, exports_per_month: 100 } },
+    { ...base, id: "3", slug: "growth", name: "Growth", description: "For growing businesses with multiple outlets and deeper reporting.", sortOrder: 2, isTrial: false, trialDays: 0, prices: { monthly: 199000, yearly: 1990000 }, limits: { businesses: 1, outlets: 3, users: 10, products: 2000, customers: 5000, transactions_per_month: 10000, exports_per_month: 500 } },
+    { ...base, id: "4", slug: "pro", name: "Professional", description: "For growing retailers with several outlets and deeper reporting.", sortOrder: 3, isTrial: false, trialDays: 0, prices: { monthly: 399000, yearly: 3990000 }, limits: { businesses: 1, outlets: 10, users: 20, products: null, customers: null, transactions_per_month: null, exports_per_month: null } },
+    { ...base, id: "5", slug: "enterprise", name: "Enterprise", description: "Custom limits and entitlements for large operations.", sortOrder: 4, isTrial: false, trialDays: 0, prices: { monthly: 0, yearly: 0 }, limits: { businesses: null, outlets: null, users: null, products: null, customers: null, transactions_per_month: null, exports_per_month: null }, metadata: { pricing: "custom" } },
+  ];
 }
 
 function mockPlansList() {
   return {
-    plans: [
-      { id: "2", slug: "basic", name: "Basic", description: "", sortOrder: 1, isPublic: true, isActive: true, isTrial: false, trialDays: 0, currency: "IDR", prices: { monthly: 69000, yearly: 720000 }, limits: {}, features: {} },
-      { id: "3", slug: "pro", name: "Pro", description: "", sortOrder: 2, isPublic: true, isActive: true, isTrial: false, trialDays: 0, currency: "IDR", prices: { monthly: 89000, yearly: 890000 }, limits: {}, features: {} },
-    ],
+    plans: mockPlanList().filter((plan) => plan.slug !== "trial" && plan.slug !== "enterprise"),
     providers: [{ name: "manual", label: "Bank transfer", sandbox: false }],
-    current: { id: "1", slug: "trial", name: "Free Trial", description: "", sortOrder: 0, isPublic: true, isActive: true, isTrial: true, trialDays: 30, currency: "IDR", prices: { monthly: 0, yearly: 0 }, limits: {}, features: {} },
+    current: mockPlanList()[0],
   };
 }
 
@@ -368,7 +386,7 @@ function mockSubscriptionDetail(): SubscriptionDetail {
       { metric: "exports_per_month", label: "Exports this month", used: 0, limit: 10, remaining: 10, percent: 0, level: "ok", unlimited: false },
     ],
     features: {},
-    availablePlans: mockPlansList().plans,
+    availablePlans: mockPlanList(),
     openInvoice: null,
     trialReminders: [14, 7, 3, 1],
     providerStatus: { manual: { enabled: true, label: "Bank transfer" } },
@@ -383,6 +401,10 @@ function mockCheckout(): CheckoutResult {
   };
 }
 
-function mockChangePlan(_input: { plan: string; billingPeriod: string }): { requiresPayment: boolean; subscription: SubscriptionDetail } {
-  return { requiresPayment: true, subscription: { ...mockSubscriptionDetail() } };
+function mockChangePlan(_input: { plan: string; billingPeriod: string }): {
+  requiresPayment: boolean;
+  checkout?: CheckoutResult;
+  subscription: SubscriptionDetail;
+} {
+  return { requiresPayment: true, checkout: mockCheckout(), subscription: mockSubscriptionDetail() };
 }
